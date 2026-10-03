@@ -1,0 +1,53 @@
+import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
+import { readFile } from 'node:fs/promises';
+
+export async function parserCases(root) {
+  const base = unzipSync(await readFile(new URL('demos/01_直接字体.docx', root)));
+  const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const r = (text, props = '') => `<w:r><w:rPr>${props}</w:rPr><w:t xml:space="preserve">${text}</w:t></w:r>`;
+  const f = name => `<w:rFonts w:ascii="${name}" w:hAnsi="${name}" w:eastAsia="${name}" w:cs="${name}"/>`;
+  const p = runs => `<w:p>${runs}</w:p>`;
+  const styles = `<w:styles xmlns:w="${W}"/>`;
+  function pack(body, overrides = {}) {
+    const parts = { ...base, 'word/document.xml': strToU8(`<w:document xmlns:w="${W}"><w:body>${body}</w:body></w:document>`), 'word/styles.xml': strToU8(styles), ...overrides };
+    return Buffer.from(zipSync(parts)).toString('base64');
+  }
+  function body(text, face = '宋体') { return p(r(text, f(face))); }
+  const cases = [
+    { name: '完整标题来自首次匹配段落', data: pack(p(r('完整', f('宋体')) + r('标题', f('方正小标宋_gbk')) + r('后缀', f('宋体')))), title: '完整标题后缀', headings: 0 },
+    { name: '多 run 黑体与空白', data: pack(p(r('甲', f('黑体')) + r('  ', f('宋体')) + r('乙', f('SimHei')))), headings: 1 },
+    { name: '部分黑体不升级', data: pack(p(r('甲', f('黑体')) + r('乙', f('宋体')))), headings: 0 },
+    { name: '加粗不等于黑体', data: pack(p(r('粗体', f('宋体') + '<w:b/>'))), headings: 0 },
+    { name: '中文和 ASCII 分别识别字体', data: pack(p(r('中文1', '<w:rFonts w:ascii="Calibri" w:eastAsia="黑体"/>'))), headings: 0 },
+    { name: 'document defaults 生效', data: pack(p(r('默认字体')), { 'word/styles.xml': strToU8(`<w:styles xmlns:w="${W}"><w:docDefaults><w:rPrDefault><w:rPr>${f('黑体')}</w:rPr></w:rPrDefault></w:docDefaults></w:styles>`) }), headings: 1 },
+    { name: '未知字体不会猜成标题', data: pack(p(r('没有字体'))), headings: 0, warning: '未声明' },
+    { name: '字符样式作为一级标题', data: pack(p(r('字符样式标题', '<w:rStyle w:val="TitleChild"/>')), { 'word/styles.xml': strToU8(`<w:styles xmlns:w="${W}"><w:style w:type="character" w:styleId="TitleBase"><w:rPr>${f('方正小标宋_GBK')}</w:rPr></w:style><w:style w:type="character" w:styleId="TitleChild"><w:basedOn w:val="TitleBase"/></w:style></w:styles>`) }), title: '字符样式标题', headings: 0 },
+    { name: '循环样式不会无限递归', data: pack(`<w:p><w:pPr><w:pStyle w:val="A"/></w:pPr>${r('循环')}</w:p>`), title: 'test', warning: '未找到样式' },
+    { name: '空白段落不成为标题', data: pack(body('  ', '方正小标宋_GBK') + body('正文')), title: 'test', headings: 0 },
+    { name: '隐藏字与删除修订排除', data: pack(p(r('隐藏', f('方正小标宋_GBK') + '<w:vanish/>')) + `<w:del>${body('删除', '方正小标宋_GBK')}</w:del>` + body('保留')), title: 'test', text: ['保留'] },
+    { name: '复杂域保留结果不保留代码', data: pack(`<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText>HYPERLINK secret</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>${r('结果', f('宋体'))}<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`), text: ['结果'] },
+    { name: '替代内容只读取一个分支', data: pack(`<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="w">${body('首选')}</mc:Choice><mc:Fallback>${body('重复的回退')}</mc:Fallback></mc:AlternateContent>`), text: ['首选'] },
+    { name: '字体别名表支持', data: pack(body('别名标题', 'CustomSmallSong'), { 'word/fontTable.xml': strToU8(`<w:fonts xmlns:w="${W}"><w:font w:name="CustomSmallSong"><w:altName w:val="方正小标宋_GBK"/></w:font></w:fonts>`) }), title: '别名标题' },
+    { name: 'XML 实体声明拒绝', data: pack(body('正文'), { 'word/document.xml': strToU8(`<!DOCTYPE w:document [<!ENTITY a "abc">]><w:document xmlns:w="${W}"><w:body/></w:document>`) }), error: '实体' },
+    { name: 'XML 损坏拒绝', data: pack('', { 'word/document.xml': strToU8('<w:document>') }), error: 'XML' },
+    { name: '纯图片或空正文给出提示', data: pack(''), error: '没有可提取' },
+    { name: '非 Word ZIP 拒绝', data: Buffer.from(zipSync({ 'readme.txt': strToU8('not word') })).toString('base64'), error: '没有 Word 正文' },
+    { name: '伪造扩展名拒绝', data: Buffer.from('plain text').toString('base64'), error: '不是有效' },
+    { name: '截断 ZIP 拒绝', data: Buffer.from([0x50, 0x4b, 0x03, 0x04]).toString('base64'), error: '压缩包' },
+    { name: 'OLE 加密容器拒绝', data: Buffer.from([0xd0, 0xcf, 0x11, 0xe0]).toString('base64'), error: '加密' },
+    { name: '旧版 DOC 明确拒绝', data: Buffer.from([0xd0, 0xcf]).toString('base64'), filename: 'old.doc', error: '旧版' },
+    { name: '非 Word 扩展名拒绝', data: pack(body('正文')), filename: 'data.pdf', error: '.docx' },
+    { name: '解压正文超限拒绝', data: pack('', { 'word/document.xml': strToU8('x'.repeat(12 * 1024 * 1024 + 1)) }), error: '解压' },
+    { name: '标题字体反向验证', data: pack(body('看起来像标题但字体是宋体', '宋体')), title: 'test', headings: 0 },
+    { name: 'Markdown 特殊字符保持字面含义', data: pack(body('---') + body('===') + body('1. 正文') + body('## 伪标题') + body('&lt;img src=x onerror=alert(1)&gt;') + body('A &amp;amp; B')), markdownIncludes: ['\\-\\-\\-', '\\=\\=\\=', '1\\. 正文', '\\#\\# 伪标题', '\\<img src\\=x onerror\\=alert(1)\\>', 'A \\&amp; B'] }
+  ];
+  // Real cyclical inheritance, distinct from the missing-style case.
+  cases.push({ name: '样式继承循环有界', data: pack(`<w:p><w:pPr><w:pStyle w:val="A"/></w:pPr>${r('循环')}</w:p>`, { 'word/styles.xml': strToU8(`<w:styles xmlns:w="${W}"><w:style w:type="paragraph" w:styleId="A"><w:basedOn w:val="B"/></w:style><w:style w:type="paragraph" w:styleId="B"><w:basedOn w:val="A"/></w:style></w:styles>`) }), warning: '循环' });
+  const strict = pack(body('严格格式', '方正小标宋_GBK'));
+  const strictParts = unzipSync(Buffer.from(strict, 'base64'));
+  for (const key of ['word/document.xml', 'word/styles.xml']) strictParts[key] = strToU8(strFromU8(strictParts[key]).replaceAll(W, 'http://purl.oclc.org/ooxml/wordprocessingml/main'));
+  cases.push({ name: 'Strict OOXML 命名空间', data: Buffer.from(zipSync(strictParts)).toString('base64'), title: '严格格式' });
+  const themeBody = p(r('主题中文', '<w:rFonts w:eastAsiaTheme="majorEastAsia"/>'));
+  cases.push({ name: '主题字体 Hans 补充映射', data: pack(themeBody, { 'word/settings.xml': strToU8(`<w:settings xmlns:w="${W}"><w:themeFontLang w:eastAsia="zh-CN"/></w:settings>`), 'word/theme/theme1.xml': strToU8('<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:fontScheme name="Demo"><a:majorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/><a:font script="Hans" typeface="方正小标宋_GBK"/></a:majorFont></a:fontScheme></a:themeElements></a:theme>') }), title: '主题中文' });
+  return cases;
+}

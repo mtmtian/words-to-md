@@ -1,0 +1,240 @@
+{
+  "checkedAt": "2026-10-03T23:07:48.413Z",
+  "browser": "ego-lite Chromium",
+  "environment": "file://, offline during checks",
+  "inputs": [
+    {
+      "name": "01_直接字体.docx",
+      "sha256": "17176b4cae99cf103ea927e4f009114dd65d66260ced1295234f3d37d20b7756"
+    },
+    {
+      "name": "02_样式继承.docx",
+      "sha256": "83db3eeb4750ad21bd87eaea0daa479f868fc2a6f6f4bf9259eba91499705cb3"
+    },
+    {
+      "name": "03_主题字体.docx",
+      "sha256": "7e83d926480038dee8a69558f696995191b23bed10be18116e503f6a2c3a68a4"
+    },
+    {
+      "name": "04_缺失标题与混合字体.docx",
+      "sha256": "912533bb934c436116014371274408d6af98067025c15307e5aecff7c28a1e95"
+    }
+  ],
+  "htmlSha256": "59c699572f10cda8df8ebd155c08709bb762d2417da163af1026ba6ce61afee7",
+  "checks": [
+    {
+      "name": "file:// 断网加载且初始下载禁用",
+      "result": "pass"
+    },
+    {
+      "name": "完整标题来自首次匹配段落",
+      "result": "pass"
+    },
+    {
+      "name": "多 run 黑体与空白",
+      "result": "pass"
+    },
+    {
+      "name": "部分黑体不升级",
+      "result": "pass"
+    },
+    {
+      "name": "加粗不等于黑体",
+      "result": "pass"
+    },
+    {
+      "name": "中文和 ASCII 分别识别字体",
+      "result": "pass"
+    },
+    {
+      "name": "document defaults 生效",
+      "result": "pass"
+    },
+    {
+      "name": "未知字体不会猜成标题",
+      "result": "pass"
+    },
+    {
+      "name": "字符样式作为一级标题",
+      "result": "pass"
+    },
+    {
+      "name": "循环样式不会无限递归",
+      "result": "pass"
+    },
+    {
+      "name": "空白段落不成为标题",
+      "result": "pass"
+    },
+    {
+      "name": "隐藏字与删除修订排除",
+      "result": "pass"
+    },
+    {
+      "name": "复杂域保留结果不保留代码",
+      "result": "pass"
+    },
+    {
+      "name": "替代内容只读取一个分支",
+      "result": "pass"
+    },
+    {
+      "name": "字体别名表支持",
+      "result": "pass"
+    },
+    {
+      "name": "XML 实体声明拒绝",
+      "result": "pass"
+    },
+    {
+      "name": "XML 损坏拒绝",
+      "result": "pass"
+    },
+    {
+      "name": "纯图片或空正文给出提示",
+      "result": "pass"
+    },
+    {
+      "name": "非 Word ZIP 拒绝",
+      "result": "pass"
+    },
+    {
+      "name": "伪造扩展名拒绝",
+      "result": "pass"
+    },
+    {
+      "name": "截断 ZIP 拒绝",
+      "result": "pass"
+    },
+    {
+      "name": "OLE 加密容器拒绝",
+      "result": "pass"
+    },
+    {
+      "name": "旧版 DOC 明确拒绝",
+      "result": "pass"
+    },
+    {
+      "name": "非 Word 扩展名拒绝",
+      "result": "pass"
+    },
+    {
+      "name": "解压正文超限拒绝",
+      "result": "pass"
+    },
+    {
+      "name": "标题字体反向验证",
+      "result": "pass"
+    },
+    {
+      "name": "Markdown 特殊字符保持字面含义",
+      "result": "pass"
+    },
+    {
+      "name": "样式继承循环有界",
+      "result": "pass"
+    },
+    {
+      "name": "Strict OOXML 命名空间",
+      "result": "pass"
+    },
+    {
+      "name": "主题字体 Hans 补充映射",
+      "result": "pass"
+    },
+    {
+      "name": "文件大小 30 MB 上限",
+      "result": "pass"
+    },
+    {
+      "name": "四份真实 DOCX 合并逐字符比对",
+      "result": "pass"
+    },
+    {
+      "name": "一级标题 4 个与二级标题 7 个",
+      "result": "pass"
+    },
+    {
+      "name": "HTML 原文不会创建可执行 DOM",
+      "result": "pass"
+    },
+    {
+      "name": "没有匹配标题时明确提示",
+      "result": "pass"
+    },
+    {
+      "name": "离线导入没有子资源请求",
+      "result": "pass"
+    },
+    {
+      "name": "长文档的下载按钮留在可见区域",
+      "result": "pass"
+    },
+    {
+      "name": "Markdown 标签显示源码",
+      "result": "pass"
+    },
+    {
+      "name": "键盘切换阅读视图",
+      "result": "pass"
+    },
+    {
+      "name": "调整顺序同步合并正文",
+      "result": "pass"
+    },
+    {
+      "name": "删除文档同步结果",
+      "result": "pass"
+    },
+    {
+      "name": "清空恢复初始状态",
+      "result": "pass"
+    },
+    {
+      "name": "内置示例使用同一解析流程",
+      "result": "pass"
+    },
+    {
+      "name": "错误文件不破坏已合并内容",
+      "result": "pass"
+    },
+    {
+      "name": "混合成功失败批次继续解析",
+      "result": "pass"
+    },
+    {
+      "name": "重复文件有明确跳过提示",
+      "result": "pass"
+    },
+    {
+      "name": "浏览器真实下载 UTF-8 .md 与预览一致",
+      "result": "pass"
+    },
+    {
+      "name": "浏览器下载示例包包含四份原始 Word",
+      "result": "pass"
+    },
+    {
+      "name": "新标签页为相同纯文本且断开 opener",
+      "result": "pass"
+    },
+    {
+      "name": "用户点击复制返回成功状态",
+      "result": "pass"
+    },
+    {
+      "name": "粘贴验证实际剪贴板内容一致",
+      "result": "pass"
+    },
+    {
+      "name": "390px 窄屏无横向溢出",
+      "result": "pass"
+    },
+    {
+      "name": "窄屏源码与下载可用",
+      "result": "pass"
+    }
+  ],
+  "passed": 53,
+  "failure": null
+}
