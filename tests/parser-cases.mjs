@@ -72,6 +72,10 @@ export async function parserCases(root) {
     'word/styles2.xml': strToU8(`<w:styles xmlns:w="${W}"><w:style w:type="paragraph" w:styleId="Hei"><w:rPr>${f('黑体')}</w:rPr></w:style></w:styles>`)
   });
   cases.push({ name: '按关系文件定位 document2.xml 及其样式部件', data: Buffer.from(zipSync(webParts)).toString('base64'), title: '网页版标题', headings: 1 });
+  // OPC keeps part names percent-encoded in ZIP item names, so relationship targets must not be decoded.
+  const encodedParts = { ...webParts, 'word/_rels/document2.xml.rels': relsXml([['styles', 'styles%202.xml']]), 'word/styles%202.xml': webParts['word/styles2.xml'] };
+  delete encodedParts['word/styles2.xml'];
+  cases.push({ name: '关系目标保持百分号编码匹配 ZIP 条目名', data: Buffer.from(zipSync(encodedParts)).toString('base64'), title: '网页版标题', headings: 1 });
   const br = face => `<w:r><w:rPr>${f(face)}</w:rPr><w:br/></w:r>`;
   cases.push(
     { name: '标题与二级标题内换行在中文之间直接拼接', data: pack(p(r('关于推进文档数字化', f('方正小标宋_GBK')) + br('方正小标宋_GBK') + r('整理工作的通知', f('方正小标宋_GBK'))) + p(r('一、工作', f('黑体')) + br('黑体') + r('目标', f('黑体')))), title: '关于推进文档数字化整理工作的通知', headings: 1, markdownIncludes: ['# 关于推进文档数字化整理工作的通知\n', '## 一、工作目标\n'] },

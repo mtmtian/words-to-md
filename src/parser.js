@@ -28,14 +28,27 @@ function xml(bytes, label) {
   return doc;
 }
 
-function openPackage(input) {
+// Package paths of internal relationship targets, keyed by the last segment of the relationship type
+// (officeDocument, styles, theme, …). Paths stay percent-encoded, as ZIP item names are.
+function relationshipTargets(relsDoc, sourcePart) {
+  const targets = {};
+  for (const rel of relsDoc?.documentElement.children || []) {
+    const type = (rel.getAttribute('Type') || '').split('/').pop();
+    const target = rel.getAttribute('Target');
+    if (type && target && !targets[type] && rel.getAttribute('TargetMode') !== 'External') targets[type] = new URL(target, `https://local.invalid/${sourcePart}`).pathname.slice(1);
+  }
+  return targets;
+}
+
+// Finds the main document through _rels/.rels (Word for the web saves word/document2.xml) and its related parts through
+// the main part's relationships. Only these parts are inflated, under one decompressed-size budget.
+function readWordParts(input) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   if (bytes.byteLength > MAX_FILE_BYTES) throw new Error('文件超过 30 MB，请拆分后导入。');
   if (bytes[0] === 0xd0 && bytes[1] === 0xcf) throw new Error('这是旧版 DOC 或加密 Word 文件。请在 Word 中解密并另存为 .docx。');
   if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new Error('不是有效的 DOCX 文件，请勿只修改文件扩展名。');
   let total = 0;
-  // Inflates only the named parts; the decompressed-size budget spans every call for this file.
-  return names => {
+  const extract = names => {
     let count = 0;
     try {
       return unzipSync(bytes, { filter(entry) {
@@ -50,19 +63,20 @@ function openPackage(input) {
       throw new Error('DOCX 压缩包损坏或格式不受支持，请重新保存后导入。');
     }
   };
-}
-
-// Internal relationship targets as package paths, keyed by the last segment of the type (officeDocument, styles, theme, …).
-function relationshipTargets(relsDoc, sourcePart) {
-  const targets = {};
-  for (const rel of relsDoc?.documentElement.children || []) {
-    const type = (rel.getAttribute('Type') || '').split('/').pop();
-    const target = rel.getAttribute('Target');
-    if (!type || !target || targets[type] || rel.getAttribute('TargetMode') === 'External') continue;
-    const path = new URL(target, `https://local.invalid/${sourcePart}`).pathname.slice(1);
-    try { targets[type] = decodeURIComponent(path); } catch { targets[type] = path; }
-  }
-  return targets;
+  const mainPath = relationshipTargets(xml(extract(['_rels/.rels'])['_rels/.rels'], '关系'), '').officeDocument || 'word/document.xml';
+  const mainRelsPath = mainPath.replace(/[^/]*$/, name => `_rels/${name}.rels`);
+  const main = extract([mainPath, mainRelsPath]);
+  if (!main[mainPath]) throw new Error('压缩包中没有 Word 正文，或使用了不支持的文档部件路径。');
+  const related = relationshipTargets(xml(main[mainRelsPath], '关系'), mainPath);
+  const folder = mainPath.replace(/[^/]*$/, '');
+  const paths = {
+    styles: related.styles || folder + 'styles.xml',
+    settings: related.settings || folder + 'settings.xml',
+    fontTable: related.fontTable || folder + 'fontTable.xml',
+    theme: related.theme || folder + 'theme/theme1.xml'
+  };
+  const parts = extract(Object.values(paths));
+  return { document: main[mainPath], styles: parts[paths.styles], settings: parts[paths.settings], fontTable: parts[paths.fontTable], theme: parts[paths.theme] };
 }
 
 function readRunProps(rPr) {
@@ -207,7 +221,7 @@ export function headingText(text) {
 }
 
 export function documentToMarkdown(doc) {
-  const lines = [`# ${escapeMarkdown(headingText(doc.title))}`];
+  const lines = [`# ${escapeMarkdown(doc.title)}`];
   for (const [index, p] of doc.paragraphs.entries()) {
     if (index === doc.titleIndex) continue;
     lines.push(p.isHeading ? `## ${escapeMarkdown(headingText(p.text))}` : escapeMarkdown(p.text).replace(/\n/g, '  \n'));
@@ -223,28 +237,17 @@ export function mergeDocuments(docs) {
 export function parseDocx(input, filename = '未命名.docx') {
   if (/\.doc$/i.test(filename)) throw new Error('暂不支持旧版 .doc。请在 Word 或 WPS 中另存为 .docx 后导入。');
   if (!/\.docx$/i.test(filename)) throw new Error('请选择 .docx 格式的 Word 文档。');
-  // Word for the web saves the main part as word/document2.xml, so follow the package relationships instead of fixed names.
-  const extract = openPackage(input);
-  const packageRels = relationshipTargets(xml(extract(['_rels/.rels'])['_rels/.rels'], '关系'), '');
-  const mainPath = packageRels.officeDocument || 'word/document.xml';
-  const mainRelsPath = mainPath.replace(/[^/]*$/, name => `_rels/${name}.rels`);
-  const main = extract([mainPath, mainRelsPath]);
-  if (!main[mainPath]) throw new Error('压缩包中没有 Word 正文，或使用了不支持的文档部件路径。');
-  const document = xml(main[mainPath], '正文');
+  const parts = readWordParts(input);
+  const document = xml(parts.document, '正文');
   const body = child(document.documentElement, 'body');
   if (!body) throw new Error('未找到 Word 正文。');
   const warnings = new Set();
   const warn = text => warnings.add(text);
-  const related = relationshipTargets(xml(main[mainRelsPath], '关系'), mainPath);
-  const folder = mainPath.replace(/[^/]*$/, '');
-  const paths = { styles: 'styles.xml', settings: 'settings.xml', fontTable: 'fontTable.xml', theme: 'theme/theme1.xml' };
-  for (const [type, fallback] of Object.entries(paths)) paths[type] = related[type] || folder + fallback;
-  const parts = extract(Object.values(paths));
-  const styles = makeStyles(xml(parts[paths.styles], '样式'), warn);
-  const settings = xml(parts[paths.settings], '设置');
+  const styles = makeStyles(xml(parts.styles, '样式'), warn);
+  const settings = xml(parts.settings, '设置');
   const themeLang = attr(descendants(settings, 'themeFontLang')[0], 'eastAsia') || 'zh-CN';
-  const theme = xml(parts[paths.theme], '主题');
-  const fontTable = xml(parts[paths.fontTable], '字体表');
+  const theme = xml(parts.theme, '主题');
+  const fontTable = xml(parts.fontTable, '字体表');
   const aliases = new Map();
   for (const font of descendants(fontTable, 'font')) {
     const name = normalizeFont(attr(font, 'name'));
@@ -319,7 +322,7 @@ export function parseDocx(input, filename = '未命名.docx') {
   walk(body);
   if (!paragraphs.length) throw new Error('文档中没有可提取的正文文字，可能是扫描件或仅包含图片。');
   const titleIndex = paragraphs.findIndex(p => p.hasTitleFont);
-  const title = titleIndex >= 0 ? headingText(paragraphs[titleIndex].text) : filename.replace(/\.docx$/i, '');
+  const title = headingText(titleIndex >= 0 ? paragraphs[titleIndex].text : filename.replace(/\.docx$/i, ''));
   if (titleIndex < 0) warn('未找到方正小标宋_GBK 段落，已使用文件名作为一级标题。');
   if (unknownFonts) warn('部分文字未声明可解析的字体，已保留文字；未知字体不用于识别标题。');
   if (hiddenText || deletedText) warn('已忽略隐藏文字和删除的修订，保留插入的修订。');

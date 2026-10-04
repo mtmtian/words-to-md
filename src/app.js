@@ -102,7 +102,7 @@ function renderPreview() {
   preview.replaceChildren();
   state.docs.forEach((doc, index) => {
     if (index) preview.append(element('hr'));
-    preview.append(element('h1', '', headingText(doc.title)));
+    preview.append(element('h1', '', doc.title));
     doc.paragraphs.forEach((p, pIndex) => {
       if (pIndex === doc.titleIndex) return;
       preview.append(element(p.isHeading ? 'h2' : 'p', '', p.isHeading ? headingText(p.text) : p.text));

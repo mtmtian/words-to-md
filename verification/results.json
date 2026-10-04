@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-10-04T00:41:53.926Z",
+  "checkedAt": "2026-10-04T00:48:49.325Z",
   "browser": "ego-lite Chromium",
   "environment": "file://, offline during checks",
   "inputs": [
@@ -20,7 +20,7 @@
       "sha256": "912533bb934c436116014371274408d6af98067025c15307e5aecff7c28a1e95"
     }
   ],
-  "htmlSha256": "67fc718f04226de2dbbf98ae1cc17831f7da5700df5a0a48432a474802974311",
+  "htmlSha256": "2650175a5690cf518a3c4473d084e9fe270fc1b3052de354e2295068a4fcc40c",
   "checks": [
     {
       "name": "file:// 断网加载且初始下载禁用",
@@ -171,6 +171,10 @@
       "result": "pass"
     },
     {
+      "name": "关系目标保持百分号编码匹配 ZIP 条目名",
+      "result": "pass"
+    },
+    {
       "name": "标题与二级标题内换行在中文之间直接拼接",
       "result": "pass"
     },
@@ -291,6 +295,6 @@
       "result": "pass"
     }
   ],
-  "passed": 67,
+  "passed": 68,
   "failure": null
 }

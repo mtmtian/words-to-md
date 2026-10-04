@@ -69,7 +69,7 @@ const markdown = WordMD.mergeDocuments([parsed]);
 
 `tests/acceptance.md` 在实现前定义验收行为；`tests/expected.md` 是人工写定的合并期望。四份真实 Word 覆盖直接字体、段落及字符样式继承、主题字体、缺失标题、混合字体、修订和表格文字。
 
-本次验证在 macOS 的 ego-lite Chromium 中进行，使用 `file://` 打开，验证期间浏览器断网。测试包括字面文本安全、样式循环、无效 / 加密 / 超限文件、Word 字体槽表（①、→、㈠、拼音字母、Times New Roman 占位）、表格内黑体单元格、按关系文件定位的 `document2.xml`、标题内换行、主题字体长文档解析耗时上限（2 万段 1.5 s）、真实文件选择、暂停 `requestAnimationFrame` 时的批量导入、排序删除、混合失败批次、内置 demo、真实下载、剪贴板粘贴核对、新标签页纯文本、键盘切换和 390px 窄屏。结果及文件 SHA-256 保存在 `verification/results.json`。
+本次验证在 macOS 的 ego-lite Chromium 中进行，使用 `file://` 打开，验证期间浏览器断网。测试包括字面文本安全、样式循环、无效 / 加密 / 超限文件、Word 字体槽表（①、→、㈠、拼音字母、Times New Roman 占位）、表格内黑体单元格、按关系文件定位的 `document2.xml` 与百分号编码部件名、标题内换行、主题字体长文档解析耗时上限（2 万段 1.5 s）、真实文件选择、暂停 `requestAnimationFrame` 时的批量导入、排序删除、混合失败批次、内置 demo、真实下载、剪贴板粘贴核对、新标签页纯文本、键盘切换和 390px 窄屏。结果及文件 SHA-256 保存在 `verification/results.json`。
 
 安装并启动 ego-browser 后，可重复运行：
 
