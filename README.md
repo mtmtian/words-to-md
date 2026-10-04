@@ -39,7 +39,9 @@
 使用原生 HTML / CSS / JavaScript、`fflate 0.8.2` 和浏览器 `DOMParser`。只增加一个运行时依赖用于 ZIP 解压与 demo 打包；字体识别直接读取 OOXML，避免普通文本转换丢失字体信息。`esbuild 0.25.12` 仅用于构建单文件 HTML；`markdown-it 15.0.2` 仅在测试中渲染输出，校验转义后的 Markdown 不会被误读。
 
 ```sh
+# Node.js 24（见 .nvmrc）
 npm ci
+npm run check
 npm run build
 # 可选，仅提供静态本地预览；转换不使用此服务
 npm run serve
@@ -86,3 +88,30 @@ npm test
 四份 demo 已经过 LibreOffice 渲染及逐页检查；此后 02 号只把样式字体名由 `FZXiaoBiaoSong-B05S` 改为 `FZXiaoBiaoSong-B05`，未重新渲染。渲染验证在临时 fontconfig 中使用本机宋体 / 黑体替代字形；没有改写 DOCX 的字体名称，也没有打包商业字体。尚未使用用户的实际 Word 样本，Safari / Firefox 及原生移动浏览器未实测。
 
 技术依据：[Microsoft Open XML RunFonts](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.runfonts?view=openxml-3.0.1)、[MS-OI29500 2.1.88 rFonts](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/aef3c9a6-5d6c-434b-90b7-85e761fd8e62)、[MDN Blob URL](https://developer.mozilla.org/en-US/docs/Web/API/URL/createObjectURL_static)。
+
+## 持续集成
+
+[CI 工作流](.github/workflows/ci.yml) 在 PR、推送到 `main` 或手动触发时运行，使用 Ubuntu 24.04 和 Node.js 24。工作流依次执行：
+
+1. `npm ci` 按 lockfile 安装依赖，缓存 npm 下载内容。
+2. `npm run check` 检查 `src/`、`scripts/`、`tests/` 下的 JavaScript 语法。
+3. `npm run build` 构建单文件 HTML，并检查已提交的 `dist/word-to-markdown.html` 与源码一致；源码改变后需重新构建并一起提交 HTML。
+4. 安装 Playwright 锁定版本对应的 Chromium 及系统依赖，执行 `npm run test:ci`。
+
+CI 与本机 ego-browser 共用 `tests/browser.mjs` 的全部验收断言：通过 `file://` 打开构建产物，在浏览器断网状态下检查解析、真实导入、排序、错误批次、下载、剪贴板、新标签页、键盘操作及窄屏布局。CI 浏览器独立运行，无需本机 ego-browser、登录态或自定义 secrets。Playwright 仅为开发依赖，不会打包进 HTML。
+
+云端 runner 的完整命令为：
+
+```sh
+npm ci --no-audit --no-fund
+npm run check
+npm run build
+git ls-files --error-unmatch -- dist/word-to-markdown.html
+git diff --exit-code -- dist/word-to-markdown.html
+npx --no-install playwright install --with-deps chromium
+npm run test:ci
+```
+
+每次执行保留 `browser-test-results` 诊断包 7 天，包含检查结果、输入及 HTML 的 SHA-256、截图、下载文件和 Playwright `trace.zip`；失败时保留已生成的诊断文件。全部检查通过后上传 `word-to-markdown` HTML 构建包，保留 14 天。工作流限时 15 分钟，同一 PR 或分支的新执行会取消旧执行；使用只读仓库权限，第三方 Actions 固定到完整提交 SHA。
+
+本机 `npm test` 仍使用 ego-browser，不会启动 Playwright 浏览器。CI 不部署站点或自动发布版本。运行结果可在 GitHub Actions 中查看；如需阻止失败的 PR 合并，可在仓库规则中把 `Build and browser tests` 设为必需检查。

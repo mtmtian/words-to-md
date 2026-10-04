@@ -4,15 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "check": "node scripts/check.mjs",
     "build": "node scripts/build.mjs",
     "serve": "node scripts/serve.mjs",
-    "test": "node scripts/test.mjs"
+    "test": "node scripts/test.mjs",
+    "test:ci": "node scripts/test-ci.mjs"
   },
   "dependencies": {
     "fflate": "0.8.2"
   },
   "devDependencies": {
     "esbuild": "0.25.12",
-    "markdown-it": "15.0.2"
+    "markdown-it": "15.0.2",
+    "playwright": "1.63.0"
   }
 }
