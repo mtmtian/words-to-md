@@ -69,7 +69,7 @@ const markdown = WordMD.mergeDocuments([parsed]);
 
 `tests/acceptance.md` 在实现前定义验收行为；`tests/expected.md` 是人工写定的合并期望。四份真实 Word 覆盖直接字体、段落及字符样式继承、主题字体、缺失标题、混合字体、修订和表格文字。
 
-本次验证在 macOS 的 ego-lite Chromium 中进行，使用 `file://` 打开，验证期间浏览器断网。测试包括字面文本安全、样式循环、无效 / 加密 / 超限文件、真实文件选择、排序删除、混合失败批次、内置 demo、真实下载、剪贴板粘贴核对、新标签页纯文本、键盘切换和 390px 窄屏。结果及文件 SHA-256 保存在 `verification/results.json`。
+本次验证在 macOS 的 ego-lite Chromium 中进行，使用 `file://` 打开，验证期间浏览器断网。测试包括字面文本安全、样式循环、无效 / 加密 / 超限文件、Word 字体槽表（①、→、㈠、拼音字母、Times New Roman 占位）、表格内黑体单元格、按关系文件定位的 `document2.xml`、标题内换行、主题字体长文档解析耗时上限（2 万段 1.5 s）、真实文件选择、暂停 `requestAnimationFrame` 时的批量导入、排序删除、混合失败批次、内置 demo、真实下载、剪贴板粘贴核对、新标签页纯文本、键盘切换和 390px 窄屏。结果及文件 SHA-256 保存在 `verification/results.json`。
 
 安装并启动 ego-browser 后，可重复运行：
 
@@ -82,6 +82,6 @@ npm test
 
 测试生成 `test-artifacts/results.json`、下载文件与截图；失败时保留 `failure.png`。无需浏览器工具也可手工将 `demos/` 的四份 Word 按文件名顺序导入，与 `tests/expected.md` 比较。
 
-四份 demo 已经过 LibreOffice 渲染及逐页检查。渲染验证在临时 fontconfig 中使用本机宋体 / 黑体替代字形；没有改写 DOCX 的字体名称，也没有打包商业字体。尚未使用用户的实际 Word 样本，Safari / Firefox 及原生移动浏览器未实测。
+四份 demo 已经过 LibreOffice 渲染及逐页检查；此后 02 号只把样式字体名由 `FZXiaoBiaoSong-B05S` 改为 `FZXiaoBiaoSong-B05`，未重新渲染。渲染验证在临时 fontconfig 中使用本机宋体 / 黑体替代字形；没有改写 DOCX 的字体名称，也没有打包商业字体。尚未使用用户的实际 Word 样本，Safari / Firefox 及原生移动浏览器未实测。
 
 技术依据：[Microsoft Open XML RunFonts](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.runfonts?view=openxml-3.0.1)、[MS-OI29500 2.1.88 rFonts](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/aef3c9a6-5d6c-434b-90b7-85e761fd8e62)、[MDN Blob URL](https://developer.mozilla.org/en-US/docs/Web/API/URL/createObjectURL_static)。

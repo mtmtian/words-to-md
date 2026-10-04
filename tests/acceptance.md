@@ -12,3 +12,12 @@
 10. Given 已合并内容，When 下载、复制或在新标签页打开，Then UTF-8 Markdown 与页面内容一致，下载扩展名为 .md；新页是纯文本。
 11. Given 单文件 HTML 在 file:// 或断网环境，When 载入 demo，Then 解析不需要网络和后端。
 12. Given 窄屏和键盘操作，When 添加文件、切换预览、调整顺序，Then 关键操作可达，没有页面横向溢出。
+
+## 补充场景（2026-10-04）
+
+13. Given 表格表头为黑体，When 解析，Then 表格内段落保留为正文，不产生二级标题。
+14. Given 黑体段落中含 hint=eastAsia 的 ①、→、· 或 ㈠ 等中日韩带圈字符，When 解析，Then 按 Word 的 Unicode 区块表（MS-OI29500 2.1.88）判定字体，整段仍为二级标题；没有 hint 的 ① 走西文字体。
+15. Given Word 网页版保存的 word/document2.xml，When 导入，Then 按关系文件定位正文与样式，正常识别标题。
+16. Given 标题或二级标题段落内有换行，When 输出，Then 与中文相邻的换行直接拼接，西文之间保留一个空格。
+17. Given 方正小标宋简体或其英文名 FZXiaoBiaoSong-B05S，When 解析，Then 不作为标题字体；方正小标宋_GBK 的英文名 FZXiaoBiaoSong-B05 视同目标字体。
+18. Given 浏览器暂停 requestAnimationFrame（后台标签页），When 批量导入，Then 导入照常完成；2 万段主题字体文档在 1.5 s 内解析完成。
