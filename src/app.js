@@ -7,6 +7,16 @@ const state = { docs: [], errors: [], busy: false, view: 'preview', nextId: 1, m
 const blobUrls = new Set();
 let toastTimer;
 
+// Lets the progress text paint between files. Unlike requestAnimationFrame or chained timers,
+// a message-channel task is neither paused nor throttled while the tab is in the background.
+function yieldToBrowser() {
+  return new Promise(resolve => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => resolve();
+    channel.port2.postMessage(null);
+  });
+}
+
 function toast(message) {
   $('toast').textContent = message;
   $('toast').hidden = false;
@@ -140,7 +150,7 @@ async function addFiles(files) {
     for (let i = 0; i < pending.length; i++) {
       const file = pending[i];
       $('progress').textContent = `正在解析 ${i + 1} / ${pending.length}：${file.name}`;
-      await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+      await yieldToBrowser();
       try {
         if (state.docs.some(doc => doc.filename === file.name && doc.size === file.size && doc.modified === file.lastModified)) {
           state.errors.push({ filename: file.name, message: '已导入相同名称、大小和修改时间的文件，已跳过。' });

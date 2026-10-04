@@ -90,8 +90,12 @@ try {
   check('删除文档同步结果', await page.evaluate(() => !document.querySelector('#markdown-output').value.includes('公共服务资料归档工作指引')));
   await page.click('#clear-all');
   check('清空恢复初始状态', await page.evaluate(() => document.querySelector('#file-count').textContent === '0' && document.querySelector('#download-output').disabled));
+  // Background tabs never run requestAnimationFrame callbacks; importing must not depend on them.
+  await page.evaluate(() => { window.__requestAnimationFrame = window.requestAnimationFrame; window.requestAnimationFrame = () => 0; });
   await page.click('#load-demo');
   await waitForFiles(4);
+  await page.evaluate(() => { window.requestAnimationFrame = window.__requestAnimationFrame; });
+  check('暂停 requestAnimationFrame（如后台标签页）时导入仍能完成', true);
   check('内置示例使用同一解析流程', await page.evaluate(expected => document.querySelector('#markdown-output').value === expected, expected));
 
   const badDoc = path.join(artifactDir, 'old.doc'), badZip = path.join(artifactDir, 'damaged.docx');
