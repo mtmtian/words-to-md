@@ -2,7 +2,7 @@
 
 纯前端的 Word → Markdown 批量合并工具。解析和导出都在浏览器本地完成，没有服务端、账号、分析埋点或运行时 CDN 依赖。
 
-[单文件 HTML](dist/word-to-markdown.html) · [示例 Word](demos/) · [示例合并结果](tests/expected.md)
+[单文件 HTML](dist/word-to-markdown.html) · [示例 Word](demos/) · [示例合并结果](tests/expected.md) · [MIT 许可](LICENSE)
 
 ![文档归并界面](docs/preview.png)
 
