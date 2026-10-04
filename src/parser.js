@@ -228,7 +228,7 @@ export function parseDocx(input, filename = '未命名.docx') {
   let unknownFonts = false, hiddenText = false, deletedText = false;
   const fieldStack = [];
 
-  function readParagraph(p) {
+  function readParagraph(p, inTable) {
     const pPr = child(p, 'pPr');
     const base = overlay(styles.defaults, styles.resolve(attr(child(pPr, 'pStyle'), 'val') || styles.defaultParagraph));
     const segments = [];
@@ -278,14 +278,15 @@ export function parseDocx(input, filename = '未命名.docx') {
     }
     const directNum = child(pPr, 'numPr');
     if (directNum ? attr(child(directNum, 'numId'), 'val') !== '0' : base.numbered) warn('自动列表编号未还原，仅保留段落文字；手动输入的编号会保留。');
-    paragraphs.push({ text, hasTitleFont, isHeading: visible > 0 && allHei, fonts: [...fonts] });
+    paragraphs.push({ text, hasTitleFont, isHeading: !inTable && visible > 0 && allHei, fonts: [...fonts] });
   }
-  function walk(node) {
+  // Table header cells are often set in 黑体, so paragraphs inside tables never become headings.
+  function walk(node, inTable = false) {
     if (isW(node, 'del') || isW(node, 'moveFrom')) { deletedText = true; return; }
-    if (isW(node, 'p')) { readParagraph(node); return; }
-    if (isW(node, 'tbl')) warn('表格已按行、单元格顺序展开为段落，不保留表格布局及表格样式字体。');
+    if (isW(node, 'p')) { readParagraph(node, inTable); return; }
+    if (isW(node, 'tbl')) { warn('表格已按行、单元格顺序展开为段落，不保留表格布局及表格样式字体；表格内的黑体段落不作为二级标题。'); inTable = true; }
     if (isW(node, 'altChunk')) { warn('文档含外部插入内容（altChunk），该部分未提取。'); return; }
-    for (const next of childElementsVisible(node)) walk(next);
+    for (const next of childElementsVisible(node)) walk(next, inTable);
   }
   walk(body);
   if (!paragraphs.length) throw new Error('文档中没有可提取的正文文字，可能是扫描件或仅包含图片。');

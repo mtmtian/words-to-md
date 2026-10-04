@@ -60,6 +60,8 @@ export async function parserCases(root) {
     { name: 'eastAsia 为 Times New Roman 且西文字体相同时整段用 ascii', data: titled(p(r('工作目标', '<w:rFonts w:ascii="黑体" w:hAnsi="黑体" w:eastAsia="Times New Roman"/>'))), headings: 1 },
     { name: 'eastAsia 为 Times New Roman 但西文字体不同时仍按表', data: titled(p(r('工作目标', '<w:rFonts w:ascii="黑体" w:hAnsi="Arial" w:eastAsia="Times New Roman"/>'))), headings: 0 }
   );
+  const row = (cells, face) => `<w:tr>${cells.map(text => `<w:tc>${body(text, face)}</w:tc>`).join('')}</w:tr>`;
+  cases.push({ name: '表格内黑体单元格不作为二级标题', data: titled(body('一、工作安排', '黑体') + `<w:tbl>${row(['序号', '任务'], '黑体')}${row(['1', '收集'])}</w:tbl>`), headings: 1, text: ['标题', '一、工作安排', '序号', '任务', '1', '收集'] });
   // Word's default Normal style resolves through theme fonts; 20,000 such paragraphs took 3-4 s before per-run caching.
   const themeDefaults = `<w:styles xmlns:w="${W}"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:eastAsiaTheme="minorEastAsia" w:hAnsiTheme="minorHAnsi" w:cstheme="minorBidi"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>`;
   const longBody = body('长文档标题', '方正小标宋_GBK') + Array.from({ length: 20000 }, (_, i) => p(r(`第${i + 1}段：为落实文档数字化整理要求，各部门应按期完成材料收集、归档与核对工作。`))).join('');
