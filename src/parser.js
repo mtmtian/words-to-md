@@ -136,7 +136,7 @@ function themeFont(themeDoc, key, lang) {
   return kids(font).find(el => el.localName === 'font' && el.getAttribute('script') === script)?.getAttribute('typeface') || '';
 }
 
-// Unicode block \u2192 font slot as Word applies it ([MS-OI29500] 2.1.88, ISO/IEC 29500-1 \u00a717.3.2.26); unlisted code points use hAnsi.
+// Unicode block → font slot as Word applies it ([MS-OI29500] 2.1.88, ISO/IEC 29500-1 §17.3.2.26); unlisted code points use hAnsi.
 // "hint" means eastAsia only under w:hint="eastAsia"; "hintZh" additionally requires a Chinese run language.
 const SLOT_BLOCKS = [
   [0x0000, 0x007f, 'ascii'], [0x00a0, 0x00ff, 'latin1'], [0x0100, 0x02af, 'hintZh'], [0x02b0, 0x03cf, 'hint'],
@@ -146,8 +146,8 @@ const SLOT_BLOCKS = [
   [0xd800, 0xdfff, 'eastAsia'], [0xe000, 0xf8ff, 'hint'], [0xf900, 0xfaff, 'eastAsia'], [0xfb00, 0xfb1c, 'hint'],
   [0xfb1d, 0xfdff, 'ascii'], [0xfe30, 0xfe6f, 'eastAsia'], [0xfe70, 0xfefe, 'ascii'], [0xff00, 0xffef, 'eastAsia']
 ];
-const LATIN1_HINT = '\u00a1\u00a4\u00a7\u00a8\u00aa\u00ad\u00af\u00b0\u00b1\u00b2\u00b3\u00b4\u00b6\u00b7\u00b8\u00b9\u00ba\u00bc\u00bd\u00be\u00bf\u00d7\u00f7';
-const LATIN1_HINT_ZH = '\u00e0\u00e1\u00e8\u00e9\u00ea\u00ec\u00ed\u00f2\u00f3\u00f9\u00fa\u00fc';
+const LATIN1_HINT = '¡¤§¨ª\u00ad¯°±²³´¶·¸¹º¼½¾¿×÷';
+const LATIN1_HINT_ZH = 'àáèéêìíòóùúü';
 
 function charSlot(char, hint, zh) {
   const code = char.codePointAt(0);
