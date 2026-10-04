@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-10-04T01:11:16.245Z",
+  "checkedAt": "2026-10-04T01:14:52.883Z",
   "browser": "ego-lite Chromium",
   "environment": "file://, offline during checks",
   "inputs": [
@@ -20,7 +20,7 @@
       "sha256": "912533bb934c436116014371274408d6af98067025c15307e5aecff7c28a1e95"
     }
   ],
-  "htmlSha256": "c37be8d03686a13839ce5354c987d4f1865d48cb01c5ce47b5db298d575e9580",
+  "htmlSha256": "44d1766e8a052e0aa507483695914569a655fc5a5107e91d6e8535d0aee71395",
   "checks": [
     {
       "name": "file:// 断网加载且初始下载禁用",

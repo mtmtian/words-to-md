@@ -204,10 +204,10 @@ function childElementsVisible(node) {
 const MARKS = /\\|[*_~`[]|<(?=[A-Za-z/!?])|&(?=#?[0-9A-Za-z]+;)/g;
 
 function escapeInline(text) {
-  const inert = (mark, i) => mark === '_' && /[\p{L}\p{N}]$/u.test(text.slice(0, i)) && /^[\p{L}\p{N}]/u.test(text.slice(i + 1));
+  const inert = new Set([...text.matchAll(/[\p{L}\p{N}]_(?=[\p{L}\p{N}])/gu)].map(m => m.index + m[0].length - 1));
   const counts = {};
-  for (const { 0: mark, index } of text.matchAll(MARKS)) if ('*_~`'.includes(mark) && !inert(mark, index)) counts[mark] = (counts[mark] || 0) + 1;
-  return text.replace(MARKS, (mark, index) => inert(mark, index) || counts[mark] === 1 ? mark : `\\${mark}`);
+  for (const { 0: mark, index } of text.matchAll(MARKS)) if ('*_~`'.includes(mark) && !inert.has(index)) counts[mark] = (counts[mark] || 0) + 1;
+  return text.replace(MARKS, (mark, index) => inert.has(index) || counts[mark] === 1 ? mark : `\\${mark}`);
 }
 
 // A line may also open a heading, list, quote, thematic break or setext underline; a table needs at least two lines.

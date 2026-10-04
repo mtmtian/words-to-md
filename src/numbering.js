@@ -65,6 +65,8 @@ export function createNumbering(numberingDoc, warn) {
       suffix: attr(child(lvl, 'suff'), 'val') || 'tab'
     };
   };
+  // Without an explicit level, the level linked to the paragraph style (w:pStyle) applies.
+  const styleLevel = (num, styleId) => [...(definition(num)?.levels || [])].find(([, lvl]) => attr(child(lvl, 'pStyle'), 'val') === styleId)?.[0];
   const format = (name, n) => {
     if (FORMATS[name]) return FORMATS[name](n);
     warn(`部分编号格式（${name}）按阿拉伯数字输出。`);
@@ -75,8 +77,7 @@ export function createNumbering(numberingDoc, warn) {
     if (!numId || numId === '0') return '';
     const num = nums.get(numId);
     if (!num) { warn('缺少编号定义，部分自动编号未还原。'); return ''; }
-    // Without an explicit level, a level linked to the paragraph style (w:pStyle) applies, else level 0.
-    const depth = Number(ilvl || [...(definition(num)?.levels || [])].find(([, lvl]) => attr(child(lvl, 'pStyle'), 'val') === styleId)?.[0] || 0);
+    const depth = Number(ilvl || styleLevel(num, styleId) || 0);
     const current = level(num, depth);
     if (!current) return '';
     if (current.format === 'bullet') { warn('项目符号未保留，仅保留段落文字。'); return ''; }
@@ -92,7 +93,7 @@ export function createNumbering(numberingDoc, warn) {
       return format(current.legal ? 'decimal' : lvl?.format || 'decimal', counts[shown] ?? lvl?.start ?? 0);
     });
     // The default tab after a number is layout; after CJK punctuation such as "一、" or "（一）" no space is added.
-    const gap = current.suffix === 'nothing' || current.suffix === 'tab' && /[　-〿＀-￯]$/.test(label) ? '' : ' ';
+    const gap = current.suffix === 'nothing' || current.suffix === 'tab' && /[\u3000-\u303f\uff00-\uffef]$/.test(label) ? '' : ' ';
     return label && label + gap;
   };
 }
