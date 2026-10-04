@@ -1,22 +1,13 @@
 import { unzipSync } from 'fflate';
+import { attr, child, descendants, isW, kids, on } from './ooxml.js';
+import { createNumbering } from './numbering.js';
 
-const W = new Set(['http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'http://purl.oclc.org/ooxml/wordprocessingml/main']);
 const MiB = 1024 * 1024;
 export const MAX_FILE_BYTES = 30 * MiB;
 // 方正小标宋_GBK and its English name. FZXiaoBiaoSong-B05S is 方正小标宋简体, a separate GB2312 font.
 const TITLE_FONTS = new Set(['方正小标宋gbk', 'fzxiaobiaosongb05']);
 const HEI_FONTS = new Set(['黑体', 'simhei']);
 const normalizeFont = name => (name || '').normalize('NFKC').toLowerCase().replace(/[@\s_\-]/g, '');
-const isW = (node, name) => node?.nodeType === 1 && W.has(node.namespaceURI) && (!name || node.localName === name);
-const kids = node => [...(node?.children || [])];
-const child = (node, name) => kids(node).find(el => isW(el, name));
-const attr = (node, name) => {
-  if (!node) return '';
-  for (const ns of W) if (node.hasAttributeNS(ns, name)) return node.getAttributeNS(ns, name);
-  return '';
-};
-const descendants = (node, name) => [...(node?.getElementsByTagNameNS('*', name) || [])].filter(el => W.has(el.namespaceURI));
-const on = node => !!node && !['0', 'false', 'off'].includes(attr(node, 'val'));
 
 function xml(bytes, label) {
   if (!bytes) return null;
@@ -73,10 +64,11 @@ function readWordParts(input) {
     styles: related.styles || folder + 'styles.xml',
     settings: related.settings || folder + 'settings.xml',
     fontTable: related.fontTable || folder + 'fontTable.xml',
-    theme: related.theme || folder + 'theme/theme1.xml'
+    theme: related.theme || folder + 'theme/theme1.xml',
+    numbering: related.numbering || folder + 'numbering.xml'
   };
   const parts = extract(Object.values(paths));
-  return { document: main[mainPath], styles: parts[paths.styles], settings: parts[paths.settings], fontTable: parts[paths.fontTable], theme: parts[paths.theme] };
+  return { document: main[mainPath], styles: parts[paths.styles], settings: parts[paths.settings], fontTable: parts[paths.fontTable], theme: parts[paths.theme], numbering: parts[paths.numbering] };
 }
 
 function readRunProps(rPr) {
@@ -113,8 +105,8 @@ function makeStyles(stylesDoc, warn) {
   for (const el of descendants(stylesDoc, 'style')) {
     const id = attr(el, 'styleId');
     const props = readRunProps(child(el, 'rPr'));
-    const numbering = child(child(el, 'pPr'), 'numPr');
-    if (numbering) props.numbered = attr(child(numbering, 'numId'), 'val') !== '0';
+    const numPr = child(child(el, 'pPr'), 'numPr');
+    for (const key of ['numId', 'ilvl']) if (attr(child(numPr, key), 'val')) props[key] = attr(child(numPr, key), 'val');
     styles.set(id, { basedOn: attr(child(el, 'basedOn'), 'val'), props });
     if (onDefault(el)) {
       if (attr(el, 'type') === 'paragraph') defaultParagraph = id;
@@ -276,13 +268,18 @@ export function parseDocx(input, filename = '未命名.docx') {
     if (TITLE_FONTS.has(alternate) || HEI_FONTS.has(alternate)) aliases.set(name, alternate);
   }
   const fontOf = fontResolver(theme, themeLang, aliases);
+  const numberLabel = createNumbering(xml(parts.numbering, '编号'), warn);
   const paragraphs = [];
   let unknownFonts = false, hiddenText = false, deletedText = false;
   const fieldStack = [];
 
   function readParagraph(p, inTable) {
     const pPr = child(p, 'pPr');
-    const base = overlay(styles.defaults, styles.resolve(attr(child(pPr, 'pStyle'), 'val') || styles.defaultParagraph));
+    const styleId = attr(child(pPr, 'pStyle'), 'val') || styles.defaultParagraph;
+    const base = overlay(styles.defaults, styles.resolve(styleId));
+    // An empty numbered paragraph still uses up its number, so the label is taken before the text is checked.
+    const numPr = child(pPr, 'numPr');
+    const label = numberLabel(attr(child(numPr, 'numId'), 'val') || base.numId, attr(child(numPr, 'ilvl'), 'val') || base.ilvl, styleId);
     const segments = [];
     function visit(node, inherited) {
       if (isW(node, 'del') || isW(node, 'moveFrom')) { deletedText = true; return; }
@@ -328,9 +325,8 @@ export function parseDocx(input, filename = '未命名.docx') {
       hasTitleFont ||= TITLE_FONTS.has(font);
       allHei &&= HEI_FONTS.has(font);
     }
-    const directNum = child(pPr, 'numPr');
-    if (directNum ? attr(child(directNum, 'numId'), 'val') !== '0' : base.numbered) warn('自动列表编号未还原，仅保留段落文字；手动输入的编号会保留。');
-    paragraphs.push({ text, hasTitleFont, isHeading: !inTable && visible > 0 && allHei, fonts: [...fonts] });
+    // The label keeps its own formatting, so heading detection looks at the paragraph's own text only.
+    paragraphs.push({ text: label + text, hasTitleFont, isHeading: !inTable && visible > 0 && allHei, fonts: [...fonts] });
   }
   // Table header cells are often set in 黑体, so paragraphs inside tables never become headings.
   function walk(node, inTable = false) {
