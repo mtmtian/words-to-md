@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-10-04T00:48:49.325Z",
+  "checkedAt": "2026-10-04T01:14:52.883Z",
   "browser": "ego-lite Chromium",
   "environment": "file://, offline during checks",
   "inputs": [
@@ -20,7 +20,7 @@
       "sha256": "912533bb934c436116014371274408d6af98067025c15307e5aecff7c28a1e95"
     }
   ],
-  "htmlSha256": "2650175a5690cf518a3c4473d084e9fe270fc1b3052de354e2295068a4fcc40c",
+  "htmlSha256": "44d1766e8a052e0aa507483695914569a655fc5a5107e91d6e8535d0aee71395",
   "checks": [
     {
       "name": "file:// 断网加载且初始下载禁用",
@@ -191,6 +191,30 @@
       "result": "pass"
     },
     {
+      "name": "公文多级自动编号还原为文字",
+      "result": "pass"
+    },
+    {
+      "name": "多级十进制编号逐级重启",
+      "result": "pass"
+    },
+    {
+      "name": "样式关联编号、取消编号与起始值覆盖",
+      "result": "pass"
+    },
+    {
+      "name": "常见编号格式",
+      "result": "pass"
+    },
+    {
+      "name": "项目符号提示、空编号段落占号与编号后缀",
+      "result": "pass"
+    },
+    {
+      "name": "编号定义缺失时保留文字并提示",
+      "result": "pass"
+    },
+    {
       "name": "表格内黑体单元格不作为二级标题",
       "result": "pass"
     },
@@ -199,11 +223,27 @@
       "result": "pass"
     },
     {
+      "name": "82 条易误读文字经 markdown-it 渲染后保持原文",
+      "result": "pass"
+    },
+    {
+      "name": "GFM 单波浪线成对时转义，单个时保留",
+      "result": "pass"
+    },
+    {
+      "name": "普通文字不再加多余反斜杠",
+      "result": "pass"
+    },
+    {
       "name": "文件大小 30 MB 上限",
       "result": "pass"
     },
     {
       "name": "四份真实 DOCX 合并逐字符比对",
+      "result": "pass"
+    },
+    {
+      "name": "四份示例合并结果经 markdown-it 渲染后保持原文",
       "result": "pass"
     },
     {
@@ -295,6 +335,6 @@
       "result": "pass"
     }
   ],
-  "passed": 68,
+  "passed": 78,
   "failure": null
 }

@@ -1,22 +1,13 @@
 import { unzipSync } from 'fflate';
+import { attr, child, descendants, isW, kids, on } from './ooxml.js';
+import { createNumbering } from './numbering.js';
 
-const W = new Set(['http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'http://purl.oclc.org/ooxml/wordprocessingml/main']);
 const MiB = 1024 * 1024;
 export const MAX_FILE_BYTES = 30 * MiB;
 // 方正小标宋_GBK and its English name. FZXiaoBiaoSong-B05S is 方正小标宋简体, a separate GB2312 font.
 const TITLE_FONTS = new Set(['方正小标宋gbk', 'fzxiaobiaosongb05']);
 const HEI_FONTS = new Set(['黑体', 'simhei']);
 const normalizeFont = name => (name || '').normalize('NFKC').toLowerCase().replace(/[@\s_\-]/g, '');
-const isW = (node, name) => node?.nodeType === 1 && W.has(node.namespaceURI) && (!name || node.localName === name);
-const kids = node => [...(node?.children || [])];
-const child = (node, name) => kids(node).find(el => isW(el, name));
-const attr = (node, name) => {
-  if (!node) return '';
-  for (const ns of W) if (node.hasAttributeNS(ns, name)) return node.getAttributeNS(ns, name);
-  return '';
-};
-const descendants = (node, name) => [...(node?.getElementsByTagNameNS('*', name) || [])].filter(el => W.has(el.namespaceURI));
-const on = node => !!node && !['0', 'false', 'off'].includes(attr(node, 'val'));
 
 function xml(bytes, label) {
   if (!bytes) return null;
@@ -73,10 +64,11 @@ function readWordParts(input) {
     styles: related.styles || folder + 'styles.xml',
     settings: related.settings || folder + 'settings.xml',
     fontTable: related.fontTable || folder + 'fontTable.xml',
-    theme: related.theme || folder + 'theme/theme1.xml'
+    theme: related.theme || folder + 'theme/theme1.xml',
+    numbering: related.numbering || folder + 'numbering.xml'
   };
   const parts = extract(Object.values(paths));
-  return { document: main[mainPath], styles: parts[paths.styles], settings: parts[paths.settings], fontTable: parts[paths.fontTable], theme: parts[paths.theme] };
+  return { document: main[mainPath], styles: parts[paths.styles], settings: parts[paths.settings], fontTable: parts[paths.fontTable], theme: parts[paths.theme], numbering: parts[paths.numbering] };
 }
 
 function readRunProps(rPr) {
@@ -113,8 +105,8 @@ function makeStyles(stylesDoc, warn) {
   for (const el of descendants(stylesDoc, 'style')) {
     const id = attr(el, 'styleId');
     const props = readRunProps(child(el, 'rPr'));
-    const numbering = child(child(el, 'pPr'), 'numPr');
-    if (numbering) props.numbered = attr(child(numbering, 'numId'), 'val') !== '0';
+    const numPr = child(child(el, 'pPr'), 'numPr');
+    for (const key of ['numId', 'ilvl']) if (attr(child(numPr, key), 'val')) props[key] = attr(child(numPr, key), 'val');
     styles.set(id, { basedOn: attr(child(el, 'basedOn'), 'val'), props });
     if (onDefault(el)) {
       if (attr(el, 'type') === 'paragraph') defaultParagraph = id;
@@ -207,8 +199,29 @@ function childElementsVisible(node) {
   return kids(node);
 }
 
-export function escapeMarkdown(text) {
-  return text.replace(/\\/g, '\\\\').replace(/([`*_{}\[\]<>&#!|~+\-=])/g, '\\$1').replace(/^([ \t]*\d+)([.)])(?=\s)/gm, '$1\\$2');
+// Escape only what CommonMark/GFM would interpret, so the Markdown source stays readable and searchable.
+// * _ ~ ` act only in pairs within one block, and _ never between letters or digits; [ < & start links, HTML and entities.
+const MARKS = /\\|[*_~`[]|<(?=[A-Za-z/!?])|&(?=#?[0-9A-Za-z]+;)/g;
+
+function escapeInline(text) {
+  const inert = new Set([...text.matchAll(/[\p{L}\p{N}]_(?=[\p{L}\p{N}])/gu)].map(m => m.index + m[0].length - 1));
+  const counts = {};
+  for (const { 0: mark, index } of text.matchAll(MARKS)) if ('*_~`'.includes(mark) && !inert.has(index)) counts[mark] = (counts[mark] || 0) + 1;
+  return text.replace(MARKS, (mark, index) => inert.has(index) || counts[mark] === 1 ? mark : `\\${mark}`);
+}
+
+// A line may also open a heading, list, quote, thematic break or setext underline; a table needs at least two lines.
+function escapeParagraph(text) {
+  const escaped = escapeInline(text).split('\n').map(line => line
+    .replace(/^([ \t]*)(#{1,6}(?=[ \t]|$)|[-+*](?=[ \t]|$)|>)/, '$1\\$2')
+    .replace(/^([ \t]*\d{1,9})([.)])(?=[ \t]|$)/, '$1\\$2')
+    .replace(/^([ \t]*)(-[- \t]*|=+[ \t]*)$/, '$1\\$2')).join('\n');
+  return text.includes('\n') ? escaped.replace(/\|/g, '\\|') : escaped;
+}
+
+// An ATX heading drops a trailing run of # that follows a space.
+function escapeHeading(text) {
+  return escapeInline(text).replace(/(^|[ \t])(#+[ \t]*)$/, '$1\\$2');
 }
 
 const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Bopomofo}\u3000-\u303f\uff00-\uffef]/u;
@@ -221,10 +234,10 @@ export function headingText(text) {
 }
 
 export function documentToMarkdown(doc) {
-  const lines = [`# ${escapeMarkdown(doc.title)}`];
+  const lines = [`# ${escapeHeading(doc.title)}`];
   for (const [index, p] of doc.paragraphs.entries()) {
     if (index === doc.titleIndex) continue;
-    lines.push(p.isHeading ? `## ${escapeMarkdown(headingText(p.text))}` : escapeMarkdown(p.text).replace(/\n/g, '  \n'));
+    lines.push(p.isHeading ? `## ${escapeHeading(headingText(p.text))}` : escapeParagraph(p.text).replace(/\n/g, '  \n'));
   }
   return `${lines.join('\n\n')}\n`;
 }
@@ -255,13 +268,18 @@ export function parseDocx(input, filename = '未命名.docx') {
     if (TITLE_FONTS.has(alternate) || HEI_FONTS.has(alternate)) aliases.set(name, alternate);
   }
   const fontOf = fontResolver(theme, themeLang, aliases);
+  const numberLabel = createNumbering(xml(parts.numbering, '编号'), warn);
   const paragraphs = [];
   let unknownFonts = false, hiddenText = false, deletedText = false;
   const fieldStack = [];
 
   function readParagraph(p, inTable) {
     const pPr = child(p, 'pPr');
-    const base = overlay(styles.defaults, styles.resolve(attr(child(pPr, 'pStyle'), 'val') || styles.defaultParagraph));
+    const styleId = attr(child(pPr, 'pStyle'), 'val') || styles.defaultParagraph;
+    const base = overlay(styles.defaults, styles.resolve(styleId));
+    // An empty numbered paragraph still uses up its number, so the label is taken before the text is checked.
+    const numPr = child(pPr, 'numPr');
+    const label = numberLabel(attr(child(numPr, 'numId'), 'val') || base.numId, attr(child(numPr, 'ilvl'), 'val') || base.ilvl, styleId);
     const segments = [];
     function visit(node, inherited) {
       if (isW(node, 'del') || isW(node, 'moveFrom')) { deletedText = true; return; }
@@ -307,9 +325,8 @@ export function parseDocx(input, filename = '未命名.docx') {
       hasTitleFont ||= TITLE_FONTS.has(font);
       allHei &&= HEI_FONTS.has(font);
     }
-    const directNum = child(pPr, 'numPr');
-    if (directNum ? attr(child(directNum, 'numId'), 'val') !== '0' : base.numbered) warn('自动列表编号未还原，仅保留段落文字；手动输入的编号会保留。');
-    paragraphs.push({ text, hasTitleFont, isHeading: !inTable && visible > 0 && allHei, fonts: [...fonts] });
+    // The label keeps its own formatting, so heading detection looks at the paragraph's own text only.
+    paragraphs.push({ text: label + text, hasTitleFont, isHeading: !inTable && visible > 0 && allHei, fonts: [...fonts] });
   }
   // Table header cells are often set in 黑体, so paragraphs inside tables never become headings.
   function walk(node, inTable = false) {

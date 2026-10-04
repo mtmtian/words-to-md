@@ -39,7 +39,7 @@ export async function parserCases(root) {
     { name: '非 Word 扩展名拒绝', data: pack(body('正文')), filename: 'data.pdf', error: '.docx' },
     { name: '解压正文超限拒绝', data: pack('', { 'word/document.xml': strToU8('x'.repeat(12 * 1024 * 1024 + 1)) }), error: '解压' },
     { name: '标题字体反向验证', data: pack(body('看起来像标题但字体是宋体', '宋体')), title: 'test', headings: 0 },
-    { name: 'Markdown 特殊字符保持字面含义', data: pack(body('---') + body('===') + body('1. 正文') + body('## 伪标题') + body('&lt;img src=x onerror=alert(1)&gt;') + body('A &amp;amp; B')), markdownIncludes: ['\\-\\-\\-', '\\=\\=\\=', '1\\. 正文', '\\#\\# 伪标题', '\\<img src\\=x onerror\\=alert(1)\\>', 'A \\&amp; B'] }
+    { name: 'Markdown 特殊字符保持字面含义', data: pack(body('---') + body('===') + body('1. 正文') + body('## 伪标题') + body('&lt;img src=x onerror=alert(1)&gt;') + body('A &amp;amp; B')), markdownIncludes: ['\n\\---\n', '\n\\===\n', '1\\. 正文', '\\## 伪标题', '\\<img src=x onerror=alert(1)>', 'A \\&amp; B'] }
   ];
   // Real cyclical inheritance, distinct from the missing-style case.
   cases.push({ name: '样式继承循环有界', data: pack(`<w:p><w:pPr><w:pStyle w:val="A"/></w:pPr>${r('循环')}</w:p>`, { 'word/styles.xml': strToU8(`<w:styles xmlns:w="${W}"><w:style w:type="paragraph" w:styleId="A"><w:basedOn w:val="B"/></w:style><w:style w:type="paragraph" w:styleId="B"><w:basedOn w:val="A"/></w:style></w:styles>`) }), warning: '循环' });
@@ -51,7 +51,7 @@ export async function parserCases(root) {
   cases.push({ name: '主题字体 Hans 补充映射', data: pack(themeBody, { 'word/settings.xml': strToU8(`<w:settings xmlns:w="${W}"><w:themeFontLang w:eastAsia="zh-CN"/></w:settings>`), 'word/theme/theme1.xml': strToU8('<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:fontScheme name="Demo"><a:majorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/><a:font script="Hans" typeface="方正小标宋_GBK"/></a:majorFont></a:fontScheme></a:themeElements></a:theme>') }), title: '主题中文' });
   // Font slots follow the Unicode table Word uses ([MS-OI29500] 2.1.88): CJK text in 黑体, Latin text in Times New Roman.
   const mixed = (hint, lang = '') => `<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="黑体"${hint ? ' w:hint="eastAsia"' : ''}/>${lang ? `<w:lang w:eastAsia="${lang}"/>` : ''}`;
-  const titled = paragraphs => pack(body('标题', '方正小标宋_GBK') + paragraphs);
+  const titled = (paragraphs, overrides) => pack(body('标题', '方正小标宋_GBK') + paragraphs, overrides);
   cases.push(
     { name: 'hint=eastAsia 时 ①、→、· 使用中文字体', data: titled(p(r('①工作目标', mixed(true))) + p(r('→工作目标', mixed(true))) + p(r('张三·李四', mixed(true)))), headings: 3 },
     { name: '没有 hint 时 ① 使用西文字体', data: titled(p(r('①工作目标', mixed(false)))), headings: 0 },
@@ -82,6 +82,26 @@ export async function parserCases(root) {
     { name: '西文标题换行合并为一个空格', data: pack(p(r('Annual', f('方正小标宋_GBK')) + br('方正小标宋_GBK') + r('Report', f('方正小标宋_GBK')))), title: 'Annual Report' },
     { name: '方正小标宋_GBK 英文名 FZXiaoBiaoSong-B05', data: pack(body('英文名标题', 'FZXiaoBiaoSong-B05')), title: '英文名标题' },
     { name: '方正小标宋简体及其英文名不是标题字体', data: pack(body('简体中文名', '方正小标宋简体') + body('简体英文名', 'FZXiaoBiaoSong-B05S')), title: 'test', warning: '未找到方正小标宋' }
+  );
+  // Automatic numbering is restored as text; heading detection still looks only at the paragraph's own runs.
+  const lvl = (ilvl, fmt, text, extra = '', start = 1) => `<w:lvl w:ilvl="${ilvl}"><w:start w:val="${start}"/><w:numFmt w:val="${fmt}"/><w:lvlText w:val="${text}"/>${extra}</w:lvl>`;
+  const numberingXml = (abstracts, nums) => strToU8(`<w:numbering xmlns:w="${W}">${abstracts.map(([id, levels]) => `<w:abstractNum w:abstractNumId="${id}">${levels.join('')}</w:abstractNum>`).join('')}${nums.map(([id, abstractId, extra = '']) => `<w:num w:numId="${id}"><w:abstractNumId w:val="${abstractId}"/>${extra}</w:num>`).join('')}</w:numbering>`);
+  const item = (text, numId, ilvl, face = '宋体') => `<w:p><w:pPr><w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="${numId}"/></w:numPr></w:pPr>${text ? r(text, f(face)) : ''}</w:p>`;
+  const official = numberingXml([[0, [lvl(0, 'chineseCounting', '%1、'), lvl(1, 'chineseCounting', '（%2）'), lvl(2, 'decimal', '%3.'), lvl(3, 'decimal', '（%4）')]]], [[1, 0]]);
+  const decimal = numberingXml([[0, [lvl(0, 'decimal', '%1.'), lvl(1, 'decimal', '%1.%2')]]], [[1, 0]]);
+  const linkedStyles = strToU8(`<w:styles xmlns:w="${W}"><w:style w:type="paragraph" w:styleId="H"><w:pPr><w:numPr><w:numId w:val="2"/></w:numPr></w:pPr><w:rPr>${f('黑体')}</w:rPr></w:style></w:styles>`);
+  const linked = numberingXml([[1, [lvl(0, 'chineseCounting', '%1、', '<w:pStyle w:val="H"/>')]]], [[2, 1], [3, 1, '<w:lvlOverride w:ilvl="0"><w:startOverride w:val="5"/></w:lvlOverride>']]);
+  const styled = (text, numPr = '') => `<w:p><w:pPr><w:pStyle w:val="H"/>${numPr}</w:pPr>${r(text)}</w:p>`;
+  const formats = [['decimalEnclosedCircle', 1, '%1', '① '], ['ideographTraditional', 3, '%1、', '丙、'], ['upperLetter', 28, '%1.', 'BB. '], ['lowerRoman', 4, '%1)', 'iv) '], ['chineseCounting', 11, '%1、', '十一、'], ['chineseCounting', 20, '%1、', '二十、'], ['chineseCountingThousand', 105, '%1、', '一百零五、'], ['chineseLegalSimplified', 12, '%1、', '壹拾贰、'], ['decimalZero', 7, '%1.', '07. '], ['decimalFullWidth', 12, '%1．', '１２．']];
+  const formatNumbering = numberingXml(formats.map(([fmt, start, text], i) => [i, [lvl(0, fmt, text, '', start)]]), formats.map((_, i) => [i + 1, i]));
+  const assorted = numberingXml([[0, [lvl(0, 'bullet', '\uf0b7')]], [1, [lvl(0, 'decimal', '%1.')]], [2, [lvl(0, 'decimal', '%1.', '<w:suff w:val="nothing"/>')]], [3, [lvl(0, 'chineseCounting', '%1、', '<w:suff w:val="space"/>')]]], [[1, 0], [2, 1], [3, 2], [4, 3]]);
+  cases.push(
+    { name: '公文多级自动编号还原为文字', data: titled(item('工作目标', 1, 0, '黑体') + item('总体要求', 1, 1) + item('细则', 1, 2) + item('条款', 1, 3) + item('实施安排', 1, 0, '黑体') + item('分工', 1, 1), { 'word/numbering.xml': official }), text: ['标题', '一、工作目标', '（一）总体要求', '1. 细则', '（1）条款', '二、实施安排', '（一）分工'], headings: 2, markdownIncludes: ['\n## 一、工作目标\n', '\n（一）总体要求\n', '\n1\\. 细则\n', '\n## 二、实施安排\n'] },
+    { name: '多级十进制编号逐级重启', data: titled(item('总则', 1, 0) + item('范围', 1, 1) + item('术语', 1, 1) + item('要求', 1, 0) + item('一般要求', 1, 1), { 'word/numbering.xml': decimal }), text: ['标题', '1. 总则', '1.1 范围', '1.2 术语', '2. 要求', '2.1 一般要求'] },
+    { name: '样式关联编号、取消编号与起始值覆盖', data: titled(styled('第一项') + styled('不编号', '<w:numPr><w:numId w:val="0"/></w:numPr>') + styled('第二项') + item('重新起号', 3, 0, '黑体'), { 'word/numbering.xml': linked, 'word/styles.xml': linkedStyles }), text: ['标题', '一、第一项', '不编号', '二、第二项', '五、重新起号'], headings: 4 },
+    { name: '常见编号格式', data: titled(formats.map((_, i) => item('项', i + 1, 0)).join(''), { 'word/numbering.xml': formatNumbering }), text: ['标题', ...formats.map(([, , , label]) => `${label}项`)] },
+    { name: '项目符号提示、空编号段落占号与编号后缀', data: titled(item('符号项', 1, 0) + item('甲', 2, 0) + item('', 2, 0) + item('乙', 2, 0) + item('紧贴', 3, 0) + item('空格', 4, 0), { 'word/numbering.xml': assorted }), text: ['标题', '符号项', '1. 甲', '3. 乙', '1.紧贴', '一、 空格'], warning: '项目符号' },
+    { name: '编号定义缺失时保留文字并提示', data: titled(item('无定义', 99, 0)), text: ['标题', '无定义'], warning: '缺少编号定义' }
   );
   cases.push({ name: '表格内黑体单元格不作为二级标题', data: titled(body('一、工作安排', '黑体') + `<w:tbl>${row(['序号', '任务'], '黑体')}${row(['1', '收集'])}</w:tbl>`), headings: 1, text: ['标题', '一、工作安排', '序号', '任务', '1', '收集'] });
   // Word's default Normal style resolves through theme fonts; 20,000 such paragraphs took 3-4 s before per-run caching.
