@@ -39,7 +39,7 @@ export async function parserCases(root) {
     { name: '非 Word 扩展名拒绝', data: pack(body('正文')), filename: 'data.pdf', error: '.docx' },
     { name: '解压正文超限拒绝', data: pack('', { 'word/document.xml': strToU8('x'.repeat(12 * 1024 * 1024 + 1)) }), error: '解压' },
     { name: '标题字体反向验证', data: pack(body('看起来像标题但字体是宋体', '宋体')), title: 'test', headings: 0 },
-    { name: 'Markdown 特殊字符保持字面含义', data: pack(body('---') + body('===') + body('1. 正文') + body('## 伪标题') + body('&lt;img src=x onerror=alert(1)&gt;') + body('A &amp;amp; B')), markdownIncludes: ['\\-\\-\\-', '\\=\\=\\=', '1\\. 正文', '\\#\\# 伪标题', '\\<img src\\=x onerror\\=alert(1)\\>', 'A \\&amp; B'] }
+    { name: 'Markdown 特殊字符保持字面含义', data: pack(body('---') + body('===') + body('1. 正文') + body('## 伪标题') + body('&lt;img src=x onerror=alert(1)&gt;') + body('A &amp;amp; B')), markdownIncludes: ['\n\\---\n', '\n\\===\n', '1\\. 正文', '\\## 伪标题', '\\<img src=x onerror=alert(1)>', 'A \\&amp; B'] }
   ];
   // Real cyclical inheritance, distinct from the missing-style case.
   cases.push({ name: '样式继承循环有界', data: pack(`<w:p><w:pPr><w:pStyle w:val="A"/></w:pPr>${r('循环')}</w:p>`, { 'word/styles.xml': strToU8(`<w:styles xmlns:w="${W}"><w:style w:type="paragraph" w:styleId="A"><w:basedOn w:val="B"/></w:style><w:style w:type="paragraph" w:styleId="B"><w:basedOn w:val="A"/></w:style></w:styles>`) }), warning: '循环' });

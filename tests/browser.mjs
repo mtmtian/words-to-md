@@ -7,6 +7,8 @@ const { createHash } = await import('node:crypto');
 const root = testConfig.root;
 const rootUrl = pathToFileURL(root.endsWith('/') ? root : root + '/');
 const { parserCases } = await import(new URL('tests/parser-cases.mjs', rootUrl).href);
+const { markdownLiterals } = await import(new URL('tests/markdown-literals.mjs', rootUrl).href);
+const { default: MarkdownIt } = await import(new URL('node_modules/markdown-it/dist/markdown-it.mjs', rootUrl).href);
 const cases = await parserCases(rootUrl);
 const expected = await fs.readFile(path.join(root, 'tests/expected.md'), 'utf8');
 const artifactDir = path.join(root, 'test-artifacts');
@@ -15,6 +17,23 @@ const task = await taskSpace(testConfig.spaceId || 'Word Markdown regression');
 const page = task.page('p1');
 const checks = [];
 function check(name, condition) { assert.ok(condition, name); checks.push({ name, result: 'pass' }); }
+// Renders Markdown with a real CommonMark/GFM parser (raw HTML on) and lists its blocks with their literal text, so any
+// escaping gap shows up as an extra block, an emphasis/link/HTML token, or changed text.
+const markdownIt = new MarkdownIt({ html: true });
+function renderedBlocks(md) {
+  const tokens = markdownIt.parse(md, {});
+  return tokens.flatMap((token, i) => {
+    if (token.type === 'hr') return [['hr', '']];
+    if (token.type === 'heading_open' || token.type === 'paragraph_open') return [[token.type === 'paragraph_open' ? 'p' : token.tag, tokens[i + 1].children.map(c => c.type === 'text' ? c.content : c.type === 'hardbreak' ? '\n' : `«${c.type}»`).join('')]];
+    return /_close$|^inline$/.test(token.type) ? [] : [[token.type, '']];
+  });
+}
+// Markdown trims each line of a paragraph, and headings collapse whitespace, so compare text modulo that.
+const comparable = ([tag, text]) => [tag, tag === 'p' ? text.replace(/[ \t]*\n[ \t]*/g, '\n').trim() : text.replace(/\s+/g, '')];
+function assertRendersAs(md, blocks, name) {
+  assert.deepEqual(renderedBlocks(md).map(comparable), blocks.map(comparable), `${name}: Markdown 渲染结果与原文不一致\n${md}`);
+}
+const docBlocks = doc => [['h1', doc.title], ...doc.paragraphs.flatMap((p, i) => i === doc.titleIndex ? [] : [[p.isHeading ? 'h2' : 'p', p.text]])];
 async function snapshot() { console.log(await page.snapshot()); }
 async function waitForFiles(count) { await page.waitForFunction(n => document.querySelector('#file-count').textContent === String(n) && document.querySelector('#progress').hidden, count, { timeout: 15000 }); }
 const names = ['01_直接字体.docx', '02_样式继承.docx', '03_主题字体.docx', '04_缺失标题与混合字体.docx'];
@@ -33,7 +52,7 @@ try {
       const doc = window.WordMD.parseDocx(bytes, test.filename || 'test.docx');
       const ms = Math.round(performance.now() - started);
       const md = window.WordMD.mergeDocuments([doc]);
-      return { name: test.name, title: doc.title, headings: doc.headings, text: doc.paragraphs.map(p => p.text), warnings: doc.warnings, md, ms };
+      return { name: test.name, title: doc.title, headings: doc.headings, text: doc.paragraphs.map(p => p.text), warnings: doc.warnings, md, ms, doc };
     } catch (error) { return { name: test.name, error: error.message }; }
   }), cases);
   for (let i = 0; i < cases.length; i++) {
@@ -47,9 +66,15 @@ try {
       if (test.warning) assert.ok(result.warnings.some(w => w.includes(test.warning)), test.name);
       for (const literal of test.markdownIncludes || []) assert.ok(result.md.includes(literal), `${test.name}: ${literal}`);
       if (test.maxMs) assert.ok(result.ms < test.maxMs, `${test.name}: ${result.ms} ms`);
+      assertRendersAs(result.md, docBlocks(result.doc), test.name);
     }
     checks.push({ name: test.name, result: 'pass' });
   }
+  const literalMarkdown = await page.evaluate(texts => [false, true].map(isHeading => window.WordMD.mergeDocuments([{ title: '标题', titleIndex: -1, paragraphs: texts.map(text => ({ text, isHeading })) }])), markdownLiterals);
+  literalMarkdown.forEach((md, i) => assertRendersAs(md, [['h1', '标题'], ...markdownLiterals.map(text => [i ? 'h2' : 'p', text])], i ? '易误读文字作二级标题' : '易误读文字作正文'));
+  check(`${markdownLiterals.length} 条易误读文字经 markdown-it 渲染后保持原文`, true);
+  check('GFM 单波浪线成对时转义，单个时保留', literalMarkdown[0].includes('1\\~3月与5\\~6月') && literalMarkdown[0].includes('\n\n1~3月\n\n'));
+  check('普通文字不再加多余反斜杠', literalMarkdown[0].includes('user_name 与 file_path') && literalMarkdown[0].includes('C# 指南') && literalMarkdown[0].includes('R&D'));
   check('文件大小 30 MB 上限', await page.evaluate(() => {
     try { window.WordMD.parseDocx(new Uint8Array(30 * 1024 * 1024 + 1), 'large.docx'); return false; }
     catch (e) { return e.message.includes('30 MB'); }
@@ -69,6 +94,10 @@ try {
   }));
   assert.equal(imported.md, expected, '合并内容逐字符等于人工预期');
   checks.push({ name: '四份真实 DOCX 合并逐字符比对', result: 'pass' });
+  const demoFiles = await Promise.all(fixtures.map(async file => ({ name: path.basename(file), data: (await fs.readFile(file)).toString('base64') })));
+  const demoDocs = await page.evaluate(files => files.map(file => window.WordMD.parseDocx(Uint8Array.from(atob(file.data), c => c.charCodeAt(0)), file.name)), demoFiles);
+  assertRendersAs(expected, demoDocs.flatMap((doc, i) => [...(i ? [['hr', '']] : []), ...docBlocks(doc)]), '四份示例合并结果');
+  checks.push({ name: '四份示例合并结果经 markdown-it 渲染后保持原文', result: 'pass' });
   check('一级标题 4 个与二级标题 7 个', imported.h1 === 4 && imported.h2 === 7);
   check('HTML 原文不会创建可执行 DOM', imported.scripts === 0 && imported.text.includes('<script>alert(1)</script>'));
   check('没有匹配标题时明确提示', imported.warnings.includes('使用文件名') && imported.warnings.includes('未找到方正小标宋'));

@@ -207,8 +207,29 @@ function childElementsVisible(node) {
   return kids(node);
 }
 
-export function escapeMarkdown(text) {
-  return text.replace(/\\/g, '\\\\').replace(/([`*_{}\[\]<>&#!|~+\-=])/g, '\\$1').replace(/^([ \t]*\d+)([.)])(?=\s)/gm, '$1\\$2');
+// Escape only what CommonMark/GFM would interpret, so the Markdown source stays readable and searchable.
+// * _ ~ ` act only in pairs within one block, and _ never between letters or digits; [ < & start links, HTML and entities.
+const MARKS = /\\|[*_~`[]|<(?=[A-Za-z/!?])|&(?=#?[0-9A-Za-z]+;)/g;
+
+function escapeInline(text) {
+  const inert = (mark, i) => mark === '_' && /[\p{L}\p{N}]$/u.test(text.slice(0, i)) && /^[\p{L}\p{N}]/u.test(text.slice(i + 1));
+  const counts = {};
+  for (const { 0: mark, index } of text.matchAll(MARKS)) if ('*_~`'.includes(mark) && !inert(mark, index)) counts[mark] = (counts[mark] || 0) + 1;
+  return text.replace(MARKS, (mark, index) => inert(mark, index) || counts[mark] === 1 ? mark : `\\${mark}`);
+}
+
+// A line may also open a heading, list, quote, thematic break or setext underline; a table needs at least two lines.
+function escapeParagraph(text) {
+  const escaped = escapeInline(text).split('\n').map(line => line
+    .replace(/^([ \t]*)(#{1,6}(?=[ \t]|$)|[-+*](?=[ \t]|$)|>)/, '$1\\$2')
+    .replace(/^([ \t]*\d{1,9})([.)])(?=[ \t]|$)/, '$1\\$2')
+    .replace(/^([ \t]*)(-[- \t]*|=+[ \t]*)$/, '$1\\$2')).join('\n');
+  return text.includes('\n') ? escaped.replace(/\|/g, '\\|') : escaped;
+}
+
+// An ATX heading drops a trailing run of # that follows a space.
+function escapeHeading(text) {
+  return escapeInline(text).replace(/(^|[ \t])(#+[ \t]*)$/, '$1\\$2');
 }
 
 const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Bopomofo}\u3000-\u303f\uff00-\uffef]/u;
@@ -221,10 +242,10 @@ export function headingText(text) {
 }
 
 export function documentToMarkdown(doc) {
-  const lines = [`# ${escapeMarkdown(doc.title)}`];
+  const lines = [`# ${escapeHeading(doc.title)}`];
   for (const [index, p] of doc.paragraphs.entries()) {
     if (index === doc.titleIndex) continue;
-    lines.push(p.isHeading ? `## ${escapeMarkdown(headingText(p.text))}` : escapeMarkdown(p.text).replace(/\n/g, '  \n'));
+    lines.push(p.isHeading ? `## ${escapeHeading(headingText(p.text))}` : escapeParagraph(p.text).replace(/\n/g, '  \n'));
   }
   return `${lines.join('\n\n')}\n`;
 }
