@@ -27,25 +27,41 @@ function xml(bytes, label) {
   return doc;
 }
 
-function readParts(input) {
+function openPackage(input) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   if (bytes.byteLength > MAX_FILE_BYTES) throw new Error('文件超过 30 MB，请拆分后导入。');
   if (bytes[0] === 0xd0 && bytes[1] === 0xcf) throw new Error('这是旧版 DOC 或加密 Word 文件。请在 Word 中解密并另存为 .docx。');
   if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new Error('不是有效的 DOCX 文件，请勿只修改文件扩展名。');
-  let total = 0, count = 0;
-  try {
-    return unzipSync(bytes, { filter(entry) {
-      if (++count > 10000) throw new Error('文档包含过多内部文件。');
-      const wanted = /^word\/(document|styles|fontTable|settings|numbering|footnotes|endnotes)\.xml$/.test(entry.name) || /^word\/theme\/[^/]+\.xml$/.test(entry.name) || entry.name === 'word/_rels/document.xml.rels';
-      if (!wanted) return false;
-      total += entry.originalSize;
-      if (entry.originalSize > 12 * MiB || total > 32 * MiB) throw new Error('文档解压后的正文或样式过大，请拆分后导入。');
-      return true;
-    }});
-  } catch (error) {
-    if (/过大|过多/.test(error.message)) throw error;
-    throw new Error('DOCX 压缩包损坏或格式不受支持，请重新保存后导入。');
+  let total = 0;
+  // Inflates only the named parts; the decompressed-size budget spans every call for this file.
+  return names => {
+    let count = 0;
+    try {
+      return unzipSync(bytes, { filter(entry) {
+        if (++count > 10000) throw new Error('文档包含过多内部文件。');
+        if (!names.includes(entry.name)) return false;
+        total += entry.originalSize;
+        if (entry.originalSize > 12 * MiB || total > 32 * MiB) throw new Error('文档解压后的正文或样式过大，请拆分后导入。');
+        return true;
+      }});
+    } catch (error) {
+      if (/过大|过多/.test(error.message)) throw error;
+      throw new Error('DOCX 压缩包损坏或格式不受支持，请重新保存后导入。');
+    }
+  };
+}
+
+// Internal relationship targets as package paths, keyed by the last segment of the type (officeDocument, styles, theme, …).
+function relationshipTargets(relsDoc, sourcePart) {
+  const targets = {};
+  for (const rel of relsDoc?.documentElement.children || []) {
+    const type = (rel.getAttribute('Type') || '').split('/').pop();
+    const target = rel.getAttribute('Target');
+    if (!type || !target || targets[type] || rel.getAttribute('TargetMode') === 'External') continue;
+    const path = new URL(target, `https://local.invalid/${sourcePart}`).pathname.slice(1);
+    try { targets[type] = decodeURIComponent(path); } catch { targets[type] = path; }
   }
+  return targets;
 }
 
 function readRunProps(rPr) {
@@ -198,25 +214,28 @@ export function mergeDocuments(docs) {
 export function parseDocx(input, filename = '未命名.docx') {
   if (/\.doc$/i.test(filename)) throw new Error('暂不支持旧版 .doc。请在 Word 或 WPS 中另存为 .docx 后导入。');
   if (!/\.docx$/i.test(filename)) throw new Error('请选择 .docx 格式的 Word 文档。');
-  const parts = readParts(input);
-  if (!parts['word/document.xml']) throw new Error('压缩包中没有 Word 正文，或使用了不支持的文档部件路径。');
-  const document = xml(parts['word/document.xml'], '正文');
+  // Word for the web saves the main part as word/document2.xml, so follow the package relationships instead of fixed names.
+  const extract = openPackage(input);
+  const packageRels = relationshipTargets(xml(extract(['_rels/.rels'])['_rels/.rels'], '关系'), '');
+  const mainPath = packageRels.officeDocument || 'word/document.xml';
+  const mainRelsPath = mainPath.replace(/[^/]*$/, name => `_rels/${name}.rels`);
+  const main = extract([mainPath, mainRelsPath]);
+  if (!main[mainPath]) throw new Error('压缩包中没有 Word 正文，或使用了不支持的文档部件路径。');
+  const document = xml(main[mainPath], '正文');
   const body = child(document.documentElement, 'body');
   if (!body) throw new Error('未找到 Word 正文。');
   const warnings = new Set();
   const warn = text => warnings.add(text);
-  const styles = makeStyles(xml(parts['word/styles.xml'], '样式'), warn);
-  const settings = xml(parts['word/settings.xml'], '设置');
+  const related = relationshipTargets(xml(main[mainRelsPath], '关系'), mainPath);
+  const folder = mainPath.replace(/[^/]*$/, '');
+  const paths = { styles: 'styles.xml', settings: 'settings.xml', fontTable: 'fontTable.xml', theme: 'theme/theme1.xml' };
+  for (const [type, fallback] of Object.entries(paths)) paths[type] = related[type] || folder + fallback;
+  const parts = extract(Object.values(paths));
+  const styles = makeStyles(xml(parts[paths.styles], '样式'), warn);
+  const settings = xml(parts[paths.settings], '设置');
   const themeLang = attr(descendants(settings, 'themeFontLang')[0], 'eastAsia') || 'zh-CN';
-  const rels = xml(parts['word/_rels/document.xml.rels'], '关系');
-  const themeRel = [...(rels?.documentElement.children || [])].find(el => /\/theme$/.test(el.getAttribute('Type') || '') && el.getAttribute('TargetMode') !== 'External');
-  let themePath = 'word/theme/theme1.xml';
-  if (themeRel) {
-    const target = themeRel.getAttribute('Target');
-    themePath = new URL(target, 'https://local.invalid/word/document.xml').pathname.slice(1);
-  }
-  const theme = xml(parts[themePath], '主题');
-  const fontTable = xml(parts['word/fontTable.xml'], '字体表');
+  const theme = xml(parts[paths.theme], '主题');
+  const fontTable = xml(parts[paths.fontTable], '字体表');
   const aliases = new Map();
   for (const font of descendants(fontTable, 'font')) {
     const name = normalizeFont(attr(font, 'name'));

@@ -61,6 +61,17 @@ export async function parserCases(root) {
     { name: 'eastAsia 为 Times New Roman 但西文字体不同时仍按表', data: titled(p(r('工作目标', '<w:rFonts w:ascii="黑体" w:hAnsi="Arial" w:eastAsia="Times New Roman"/>'))), headings: 0 }
   );
   const row = (cells, face) => `<w:tr>${cells.map(text => `<w:tc>${body(text, face)}</w:tc>`).join('')}</w:tr>`;
+  // Word for the web stores the main part as word/document2.xml; every part must be found through relationships.
+  const relsXml = list => strToU8(`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${list.map(([type, target], i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${type}" Target="${target}"/>`).join('')}</Relationships>`);
+  const webParts = { ...base };
+  for (const name of ['word/document.xml', 'word/styles.xml', 'word/_rels/document.xml.rels']) delete webParts[name];
+  Object.assign(webParts, {
+    '_rels/.rels': relsXml([['officeDocument', 'word/document2.xml']]),
+    'word/_rels/document2.xml.rels': relsXml([['styles', 'styles2.xml'], ['theme', 'theme/theme1.xml']]),
+    'word/document2.xml': strToU8(`<w:document xmlns:w="${W}"><w:body>${body('网页版标题', '方正小标宋_GBK')}<w:p><w:pPr><w:pStyle w:val="Hei"/></w:pPr>${r('一、工作目标')}</w:p></w:body></w:document>`),
+    'word/styles2.xml': strToU8(`<w:styles xmlns:w="${W}"><w:style w:type="paragraph" w:styleId="Hei"><w:rPr>${f('黑体')}</w:rPr></w:style></w:styles>`)
+  });
+  cases.push({ name: '按关系文件定位 document2.xml 及其样式部件', data: Buffer.from(zipSync(webParts)).toString('base64'), title: '网页版标题', headings: 1 });
   cases.push({ name: '表格内黑体单元格不作为二级标题', data: titled(body('一、工作安排', '黑体') + `<w:tbl>${row(['序号', '任务'], '黑体')}${row(['1', '收集'])}</w:tbl>`), headings: 1, text: ['标题', '一、工作安排', '序号', '任务', '1', '收集'] });
   // Word's default Normal style resolves through theme fonts; 20,000 such paragraphs took 3-4 s before per-run caching.
   const themeDefaults = `<w:styles xmlns:w="${W}"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:eastAsiaTheme="minorEastAsia" w:hAnsiTheme="minorHAnsi" w:cstheme="minorBidi"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>`;
