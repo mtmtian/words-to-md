@@ -28,7 +28,7 @@
 - 提取正文段落、超链接显示文字、软换行、制表符，以及按行和单元格顺序展开的表格文字。Markdown 特殊符号会转义，防止正文被误读成标题、HTML 或列表。
 - 不保留原始分页、版式、表格结构、表格条件样式字体、自动列表编号、图片、文本框、嵌入对象、页眉页脚、脚注尾注或公式。检测到相应结构时会提供提示。没有 OCR。
 - 按“接受修订后的正文”处理：保留插入、排除删除及 moveFrom；隐藏文字不会参与标题识别。不会修改原 Word 文件。
-- 支持最常见的中文和西文字体槽位；不等同于 Word 的完整字体排版引擎。复杂脚本、特殊字体替代或第三方软件生成的非常规 OOXML，请核对原文。
+- 每个字符使用西文、中文还是复杂文种字体，按 Word 的 Unicode 区块表判断（[MS-OI29500] 2.1.88），包括 `w:hint="eastAsia"` 下的 ①、→、· 等符号，以及 Times New Roman 中文字体占位规则；表中“字体字符集”条件以 run 的东亚语言近似。这不等同于 Word 的完整排版引擎，特殊字体替代或第三方软件生成的非常规 OOXML，请核对原文。
 - 单个压缩文件上限 30 MB，正文 / 单个 XML 上限 12 MB，选中 XML 解压总量上限 32 MB，单次会话最多 100 份文档。不解压图片等无关二进制资源。
 - 错误文件不会阻止本批其余文档。名称、大小及修改时间均相同的已导入文件会跳过，并明确提示；这不是基于内容哈希的去重。
 
@@ -83,4 +83,4 @@ npm test
 
 四份 demo 已经过 LibreOffice 渲染及逐页检查。渲染验证在临时 fontconfig 中使用本机宋体 / 黑体替代字形；没有改写 DOCX 的字体名称，也没有打包商业字体。尚未使用用户的实际 Word 样本，Safari / Firefox 及原生移动浏览器未实测。
 
-技术依据：[Microsoft Open XML RunFonts](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.runfonts?view=openxml-3.0.1)、[MDN Blob URL](https://developer.mozilla.org/en-US/docs/Web/API/URL/createObjectURL_static)。
+技术依据：[Microsoft Open XML RunFonts](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.runfonts?view=openxml-3.0.1)、[MS-OI29500 2.1.88 rFonts](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/aef3c9a6-5d6c-434b-90b7-85e761fd8e62)、[MDN Blob URL](https://developer.mozilla.org/en-US/docs/Web/API/URL/createObjectURL_static)。

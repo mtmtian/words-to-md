@@ -49,6 +49,17 @@ export async function parserCases(root) {
   cases.push({ name: 'Strict OOXML 命名空间', data: Buffer.from(zipSync(strictParts)).toString('base64'), title: '严格格式' });
   const themeBody = p(r('主题中文', '<w:rFonts w:eastAsiaTheme="majorEastAsia"/>'));
   cases.push({ name: '主题字体 Hans 补充映射', data: pack(themeBody, { 'word/settings.xml': strToU8(`<w:settings xmlns:w="${W}"><w:themeFontLang w:eastAsia="zh-CN"/></w:settings>`), 'word/theme/theme1.xml': strToU8('<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:fontScheme name="Demo"><a:majorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/><a:font script="Hans" typeface="方正小标宋_GBK"/></a:majorFont></a:fontScheme></a:themeElements></a:theme>') }), title: '主题中文' });
+  // Font slots follow the Unicode table Word uses ([MS-OI29500] 2.1.88): CJK text in 黑体, Latin text in Times New Roman.
+  const mixed = (hint, lang = '') => `<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="黑体"${hint ? ' w:hint="eastAsia"' : ''}/>${lang ? `<w:lang w:eastAsia="${lang}"/>` : ''}`;
+  const titled = paragraphs => pack(body('标题', '方正小标宋_GBK') + paragraphs);
+  cases.push(
+    { name: 'hint=eastAsia 时 ①、→、· 使用中文字体', data: titled(p(r('①工作目标', mixed(true))) + p(r('→工作目标', mixed(true))) + p(r('张三·李四', mixed(true)))), headings: 3 },
+    { name: '没有 hint 时 ① 使用西文字体', data: titled(p(r('①工作目标', mixed(false)))), headings: 0 },
+    { name: '㈠ 等中日韩带圈字符总用中文字体', data: titled(p(r('㈠工作目标', mixed(false)))), headings: 1 },
+    { name: '拼音声调字母仅在中文 run 中随中文字体', data: titled(p(r('注音ā', mixed(true, 'zh-CN'))) + p(r('注音ā', mixed(true, 'ja-JP')))), headings: 1 },
+    { name: 'eastAsia 为 Times New Roman 且西文字体相同时整段用 ascii', data: titled(p(r('工作目标', '<w:rFonts w:ascii="黑体" w:hAnsi="黑体" w:eastAsia="Times New Roman"/>'))), headings: 1 },
+    { name: 'eastAsia 为 Times New Roman 但西文字体不同时仍按表', data: titled(p(r('工作目标', '<w:rFonts w:ascii="黑体" w:hAnsi="Arial" w:eastAsia="Times New Roman"/>'))), headings: 0 }
+  );
   // Word's default Normal style resolves through theme fonts; 20,000 such paragraphs took 3-4 s before per-run caching.
   const themeDefaults = `<w:styles xmlns:w="${W}"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:eastAsiaTheme="minorEastAsia" w:hAnsiTheme="minorHAnsi" w:cstheme="minorBidi"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>`;
   const longBody = body('长文档标题', '方正小标宋_GBK') + Array.from({ length: 20000 }, (_, i) => p(r(`第${i + 1}段：为落实文档数字化整理要求，各部门应按期完成材料收集、归档与核对工作。`))).join('');

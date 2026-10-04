@@ -119,29 +119,51 @@ function themeFont(themeDoc, key, lang) {
   return kids(font).find(el => el.localName === 'font' && el.getAttribute('script') === script)?.getAttribute('typeface') || '';
 }
 
-function charSlot(char, props) {
+// Unicode block \u2192 font slot as Word applies it ([MS-OI29500] 2.1.88, ISO/IEC 29500-1 \u00a717.3.2.26); unlisted code points use hAnsi.
+// "hint" means eastAsia only under w:hint="eastAsia"; "hintZh" additionally requires a Chinese run language.
+const SLOT_BLOCKS = [
+  [0x0000, 0x007f, 'ascii'], [0x00a0, 0x00ff, 'latin1'], [0x0100, 0x02af, 'hintZh'], [0x02b0, 0x03cf, 'hint'],
+  [0x0400, 0x04ff, 'hint'], [0x0590, 0x07bf, 'ascii'], [0x1100, 0x11ff, 'eastAsia'], [0x1e00, 0x1eff, 'hintZh'],
+  [0x2000, 0x27bf, 'hint'], [0x2e80, 0x2eff, 'hint'], [0x2f00, 0x2fdf, 'eastAsia'], [0x2ff0, 0x319f, 'eastAsia'],
+  [0x3200, 0x4dbf, 'eastAsia'], [0x4e00, 0x9faf, 'eastAsia'], [0xa000, 0xa4cf, 'eastAsia'], [0xac00, 0xd7af, 'eastAsia'],
+  [0xd800, 0xdfff, 'eastAsia'], [0xe000, 0xf8ff, 'hint'], [0xf900, 0xfaff, 'eastAsia'], [0xfb00, 0xfb1c, 'hint'],
+  [0xfb1d, 0xfdff, 'ascii'], [0xfe30, 0xfe6f, 'eastAsia'], [0xfe70, 0xfefe, 'ascii'], [0xff00, 0xffef, 'eastAsia']
+];
+const LATIN1_HINT = '\u00a1\u00a4\u00a7\u00a8\u00aa\u00ad\u00af\u00b0\u00b1\u00b2\u00b3\u00b4\u00b6\u00b7\u00b8\u00b9\u00ba\u00bc\u00bd\u00be\u00bf\u00d7\u00f7';
+const LATIN1_HINT_ZH = '\u00e0\u00e1\u00e8\u00e9\u00ea\u00ec\u00ed\u00f2\u00f3\u00f9\u00fa\u00fc';
+
+function charSlot(char, hint, zh) {
   const code = char.codePointAt(0);
-  if (props.cs || props.rtl) return 'cs';
-  if (code < 0x80) return 'ascii';
-  if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Bopomofo}\u3000-\u303f\uff00-\uffef\ufe30-\ufe4f]/u.test(char)) return 'eastAsia';
-  if (/[\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Devanagari}\p{Script=Thai}]/u.test(char)) return 'cs';
-  if (props.hint === 'eastAsia' && /[\u2000-\u206f\u00a0-\u00ff]/u.test(char)) return 'eastAsia';
-  return 'hAnsi';
+  // Supplementary-plane characters are stored as UTF-16 surrogates, which the table maps to eastAsia.
+  const rule = code > 0xffff ? 'eastAsia' : SLOT_BLOCKS.find(([start, end]) => code >= start && code <= end)?.[2] || 'hAnsi';
+  if (rule === 'latin1') return hint && (LATIN1_HINT.includes(char) || zh && LATIN1_HINT_ZH.includes(char)) ? 'eastAsia' : 'hAnsi';
+  if (rule === 'hint') return hint ? 'eastAsia' : 'hAnsi';
+  if (rule === 'hintZh') return hint && zh ? 'eastAsia' : 'hAnsi';
+  return rule;
 }
 
-// Every character of a run shares one props object, so each slot is resolved once per run instead of once per character.
+const sameSpec = (a, b) => !!a && !!b && a.theme === b.theme && normalizeFont(a.face) === normalizeFont(b.face);
+
+// Every character of a run shares one props object, so its slot rules and fonts are resolved once per run instead of once per character.
 function fontResolver(theme, themeLang, aliases) {
-  const runFonts = new WeakMap();
+  const runs = new WeakMap();
+  const describe = props => {
+    const { ascii, hAnsi, eastAsia } = props.fonts;
+    const lang = props.lang || themeLang;
+    // Complex-script runs, and a "Times New Roman" eastAsia face with equal ascii/hAnsi, bypass the Unicode table.
+    const fixed = props.cs || props.rtl ? 'cs' : normalizeFont(eastAsia?.face) === 'timesnewroman' && sameSpec(ascii, hAnsi) ? 'ascii' : '';
+    return { lang, fixed, hint: props.hint === 'eastAsia', zh: /^zh/i.test(lang), fonts: {} };
+  };
   return (char, props) => {
-    let fonts = runFonts.get(props);
-    if (!fonts) runFonts.set(props, fonts = {});
-    const slot = charSlot(char, props);
-    if (!(slot in fonts)) {
+    let run = runs.get(props);
+    if (!run) runs.set(props, run = describe(props));
+    const slot = run.fixed || charSlot(char, run.hint, run.zh);
+    if (!(slot in run.fonts)) {
       const spec = props.fonts[slot];
-      const name = spec ? normalizeFont(spec.face || themeFont(theme, spec.theme, props.lang || themeLang)) : '';
-      fonts[slot] = aliases.get(name) || name;
+      const name = spec ? normalizeFont(spec.face || themeFont(theme, spec.theme, run.lang)) : '';
+      run.fonts[slot] = aliases.get(name) || name;
     }
-    return fonts[slot];
+    return run.fonts[slot];
   };
 }
 
