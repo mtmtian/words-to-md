@@ -26,10 +26,13 @@ export async function runBrowserTests({ root, page, cdp, snapshotPage, browser }
     await snapshot();
     check('file:// 断网加载且初始下载禁用', await page.evaluate(() => !!window.WordMD && document.querySelector('#download-output').disabled));
     const results = await page.evaluate(cases => cases.map(test => {
+      const bytes = Uint8Array.from(atob(test.data), c => c.charCodeAt(0));
       try {
-        const doc = window.WordMD.parseDocx(Uint8Array.from(atob(test.data), c => c.charCodeAt(0)), test.filename || 'test.docx');
+        const started = performance.now();
+        const doc = window.WordMD.parseDocx(bytes, test.filename || 'test.docx');
+        const ms = Math.round(performance.now() - started);
         const md = window.WordMD.mergeDocuments([doc]);
-        return { name: test.name, title: doc.title, headings: doc.headings, text: doc.paragraphs.map(p => p.text), warnings: doc.warnings, md };
+        return { name: test.name, title: doc.title, headings: doc.headings, text: doc.paragraphs.map(p => p.text), warnings: doc.warnings, md, ms };
       } catch (error) { return { name: test.name, error: error.message }; }
     }), cases);
     for (let i = 0; i < cases.length; i++) {
@@ -42,6 +45,7 @@ export async function runBrowserTests({ root, page, cdp, snapshotPage, browser }
         if (test.text) assert.deepEqual(result.text, test.text, test.name);
         if (test.warning) assert.ok(result.warnings.some(w => w.includes(test.warning)), test.name);
         for (const literal of test.markdownIncludes || []) assert.ok(result.md.includes(literal), `${test.name}: ${literal}`);
+        if (test.maxMs) assert.ok(result.ms < test.maxMs, `${test.name}: ${result.ms} ms`);
       }
       checks.push({ name: test.name, result: 'pass' });
     }
@@ -85,8 +89,12 @@ export async function runBrowserTests({ root, page, cdp, snapshotPage, browser }
     check('删除文档同步结果', await page.evaluate(() => !document.querySelector('#markdown-output').value.includes('公共服务资料归档工作指引')));
     await page.click('#clear-all');
     check('清空恢复初始状态', await page.evaluate(() => document.querySelector('#file-count').textContent === '0' && document.querySelector('#download-output').disabled));
+    // Background tabs never run requestAnimationFrame callbacks; importing must not depend on them.
+    await page.evaluate(() => { window.__requestAnimationFrame = window.requestAnimationFrame; window.requestAnimationFrame = () => 0; });
     await page.click('#load-demo');
     await waitForFiles(4);
+    await page.evaluate(() => { window.requestAnimationFrame = window.__requestAnimationFrame; });
+    check('暂停 requestAnimationFrame（如后台标签页）时导入仍能完成', true);
     check('内置示例使用同一解析流程', await page.evaluate(expected => document.querySelector('#markdown-output').value === expected, expected));
 
     const badDoc = path.join(artifactDir, 'old.doc'), badZip = path.join(artifactDir, 'damaged.docx');

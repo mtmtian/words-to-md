@@ -1,11 +1,21 @@
 import { zipSync, strToU8 } from 'fflate';
-import { MAX_FILE_BYTES, parseDocx, mergeDocuments } from './parser.js';
+import { MAX_FILE_BYTES, parseDocx, mergeDocuments, headingText } from './parser.js';
 import demoDocuments from './demos.json';
 
 const $ = id => document.getElementById(id);
 const state = { docs: [], errors: [], busy: false, view: 'preview', nextId: 1, markdown: '' };
 const blobUrls = new Set();
 let toastTimer;
+
+// Lets the progress text paint between files. Unlike requestAnimationFrame or chained timers,
+// a message-channel task is neither paused nor throttled while the tab is in the background.
+function yieldToBrowser() {
+  return new Promise(resolve => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => resolve();
+    channel.port2.postMessage(null);
+  });
+}
 
 function toast(message) {
   $('toast').textContent = message;
@@ -92,10 +102,10 @@ function renderPreview() {
   preview.replaceChildren();
   state.docs.forEach((doc, index) => {
     if (index) preview.append(element('hr'));
-    preview.append(element('h1', '', doc.title.replace(/\s+/g, ' ').trim()));
+    preview.append(element('h1', '', doc.title));
     doc.paragraphs.forEach((p, pIndex) => {
       if (pIndex === doc.titleIndex) return;
-      preview.append(element(p.isHeading ? 'h2' : 'p', '', p.isHeading ? p.text.replace(/\s+/g, ' ') : p.text));
+      preview.append(element(p.isHeading ? 'h2' : 'p', '', p.isHeading ? headingText(p.text) : p.text));
     });
   });
 }
@@ -140,7 +150,7 @@ async function addFiles(files) {
     for (let i = 0; i < pending.length; i++) {
       const file = pending[i];
       $('progress').textContent = `正在解析 ${i + 1} / ${pending.length}：${file.name}`;
-      await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+      await yieldToBrowser();
       try {
         if (state.docs.some(doc => doc.filename === file.name && doc.size === file.size && doc.modified === file.lastModified)) {
           state.errors.push({ filename: file.name, message: '已导入相同名称、大小和修改时间的文件，已跳过。' });

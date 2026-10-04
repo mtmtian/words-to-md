@@ -3,7 +3,8 @@ import { unzipSync } from 'fflate';
 const W = new Set(['http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'http://purl.oclc.org/ooxml/wordprocessingml/main']);
 const MiB = 1024 * 1024;
 export const MAX_FILE_BYTES = 30 * MiB;
-const TITLE_FONTS = new Set(['方正小标宋gbk', 'fzxiaobiaosongb05s']);
+// 方正小标宋_GBK and its English name. FZXiaoBiaoSong-B05S is 方正小标宋简体, a separate GB2312 font.
+const TITLE_FONTS = new Set(['方正小标宋gbk', 'fzxiaobiaosongb05']);
 const HEI_FONTS = new Set(['黑体', 'simhei']);
 const normalizeFont = name => (name || '').normalize('NFKC').toLowerCase().replace(/[@\s_\-]/g, '');
 const isW = (node, name) => node?.nodeType === 1 && W.has(node.namespaceURI) && (!name || node.localName === name);
@@ -27,25 +28,55 @@ function xml(bytes, label) {
   return doc;
 }
 
-function readParts(input) {
+// Package paths of internal relationship targets, keyed by the last segment of the relationship type
+// (officeDocument, styles, theme, …). Paths stay percent-encoded, as ZIP item names are.
+function relationshipTargets(relsDoc, sourcePart) {
+  const targets = {};
+  for (const rel of relsDoc?.documentElement.children || []) {
+    const type = (rel.getAttribute('Type') || '').split('/').pop();
+    const target = rel.getAttribute('Target');
+    if (type && target && !targets[type] && rel.getAttribute('TargetMode') !== 'External') targets[type] = new URL(target, `https://local.invalid/${sourcePart}`).pathname.slice(1);
+  }
+  return targets;
+}
+
+// Finds the main document through _rels/.rels (Word for the web saves word/document2.xml) and its related parts through
+// the main part's relationships. Only these parts are inflated, under one decompressed-size budget.
+function readWordParts(input) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   if (bytes.byteLength > MAX_FILE_BYTES) throw new Error('文件超过 30 MB，请拆分后导入。');
   if (bytes[0] === 0xd0 && bytes[1] === 0xcf) throw new Error('这是旧版 DOC 或加密 Word 文件。请在 Word 中解密并另存为 .docx。');
   if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new Error('不是有效的 DOCX 文件，请勿只修改文件扩展名。');
-  let total = 0, count = 0;
-  try {
-    return unzipSync(bytes, { filter(entry) {
-      if (++count > 10000) throw new Error('文档包含过多内部文件。');
-      const wanted = /^word\/(document|styles|fontTable|settings|numbering|footnotes|endnotes)\.xml$/.test(entry.name) || /^word\/theme\/[^/]+\.xml$/.test(entry.name) || entry.name === 'word/_rels/document.xml.rels';
-      if (!wanted) return false;
-      total += entry.originalSize;
-      if (entry.originalSize > 12 * MiB || total > 32 * MiB) throw new Error('文档解压后的正文或样式过大，请拆分后导入。');
-      return true;
-    }});
-  } catch (error) {
-    if (/过大|过多/.test(error.message)) throw error;
-    throw new Error('DOCX 压缩包损坏或格式不受支持，请重新保存后导入。');
-  }
+  let total = 0;
+  const extract = names => {
+    let count = 0;
+    try {
+      return unzipSync(bytes, { filter(entry) {
+        if (++count > 10000) throw new Error('文档包含过多内部文件。');
+        if (!names.includes(entry.name)) return false;
+        total += entry.originalSize;
+        if (entry.originalSize > 12 * MiB || total > 32 * MiB) throw new Error('文档解压后的正文或样式过大，请拆分后导入。');
+        return true;
+      }});
+    } catch (error) {
+      if (/过大|过多/.test(error.message)) throw error;
+      throw new Error('DOCX 压缩包损坏或格式不受支持，请重新保存后导入。');
+    }
+  };
+  const mainPath = relationshipTargets(xml(extract(['_rels/.rels'])['_rels/.rels'], '关系'), '').officeDocument || 'word/document.xml';
+  const mainRelsPath = mainPath.replace(/[^/]*$/, name => `_rels/${name}.rels`);
+  const main = extract([mainPath, mainRelsPath]);
+  if (!main[mainPath]) throw new Error('压缩包中没有 Word 正文，或使用了不支持的文档部件路径。');
+  const related = relationshipTargets(xml(main[mainRelsPath], '关系'), mainPath);
+  const folder = mainPath.replace(/[^/]*$/, '');
+  const paths = {
+    styles: related.styles || folder + 'styles.xml',
+    settings: related.settings || folder + 'settings.xml',
+    fontTable: related.fontTable || folder + 'fontTable.xml',
+    theme: related.theme || folder + 'theme/theme1.xml'
+  };
+  const parts = extract(Object.values(paths));
+  return { document: main[mainPath], styles: parts[paths.styles], settings: parts[paths.settings], fontTable: parts[paths.fontTable], theme: parts[paths.theme] };
 }
 
 function readRunProps(rPr) {
@@ -107,7 +138,7 @@ function makeStyles(stylesDoc, warn) {
 }
 function onDefault(el) { return ['1', 'true', 'on'].includes(attr(el, 'default')); }
 
-function themeFont(themeDoc, key, slot, lang) {
+function themeFont(themeDoc, key, lang) {
   const group = key?.startsWith('major') ? 'majorFont' : 'minorFont';
   const font = themeDoc?.getElementsByTagNameNS('*', group)[0];
   if (!font) return '';
@@ -119,22 +150,52 @@ function themeFont(themeDoc, key, slot, lang) {
   return kids(font).find(el => el.localName === 'font' && el.getAttribute('script') === script)?.getAttribute('typeface') || '';
 }
 
-function charSlot(char, props) {
+// Unicode block → font slot as Word applies it ([MS-OI29500] 2.1.88, ISO/IEC 29500-1 §17.3.2.26); unlisted code points use hAnsi.
+// "hint" means eastAsia only under w:hint="eastAsia"; "hintZh" additionally requires a Chinese run language.
+const SLOT_BLOCKS = [
+  [0x0000, 0x007f, 'ascii'], [0x00a0, 0x00ff, 'latin1'], [0x0100, 0x02af, 'hintZh'], [0x02b0, 0x03cf, 'hint'],
+  [0x0400, 0x04ff, 'hint'], [0x0590, 0x07bf, 'ascii'], [0x1100, 0x11ff, 'eastAsia'], [0x1e00, 0x1eff, 'hintZh'],
+  [0x2000, 0x27bf, 'hint'], [0x2e80, 0x2eff, 'hint'], [0x2f00, 0x2fdf, 'eastAsia'], [0x2ff0, 0x319f, 'eastAsia'],
+  [0x3200, 0x4dbf, 'eastAsia'], [0x4e00, 0x9faf, 'eastAsia'], [0xa000, 0xa4cf, 'eastAsia'], [0xac00, 0xd7af, 'eastAsia'],
+  [0xd800, 0xdfff, 'eastAsia'], [0xe000, 0xf8ff, 'hint'], [0xf900, 0xfaff, 'eastAsia'], [0xfb00, 0xfb1c, 'hint'],
+  [0xfb1d, 0xfdff, 'ascii'], [0xfe30, 0xfe6f, 'eastAsia'], [0xfe70, 0xfefe, 'ascii'], [0xff00, 0xffef, 'eastAsia']
+];
+const LATIN1_HINT = '¡¤§¨ª\u00ad¯°±²³´¶·¸¹º¼½¾¿×÷';
+const LATIN1_HINT_ZH = 'àáèéêìíòóùúü';
+
+function charSlot(char, hint, zh) {
   const code = char.codePointAt(0);
-  if (props.cs || props.rtl) return 'cs';
-  if (code < 0x80) return 'ascii';
-  if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Bopomofo}\u3000-\u303f\uff00-\uffef\ufe30-\ufe4f]/u.test(char)) return 'eastAsia';
-  if (/[\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Devanagari}\p{Script=Thai}]/u.test(char)) return 'cs';
-  if (props.hint === 'eastAsia' && /[\u2000-\u206f\u00a0-\u00ff]/u.test(char)) return 'eastAsia';
-  return 'hAnsi';
+  // Supplementary-plane characters are stored as UTF-16 surrogates, which the table maps to eastAsia.
+  const rule = code > 0xffff ? 'eastAsia' : SLOT_BLOCKS.find(([start, end]) => code >= start && code <= end)?.[2] || 'hAnsi';
+  if (rule === 'latin1') return hint && (LATIN1_HINT.includes(char) || zh && LATIN1_HINT_ZH.includes(char)) ? 'eastAsia' : 'hAnsi';
+  if (rule === 'hint') return hint ? 'eastAsia' : 'hAnsi';
+  if (rule === 'hintZh') return hint && zh ? 'eastAsia' : 'hAnsi';
+  return rule;
 }
 
-function fontFor(char, props, theme, themeLang, aliases) {
-  const slot = charSlot(char, props);
-  const spec = props.fonts[slot];
-  if (!spec) return '';
-  const name = normalizeFont(spec.face || themeFont(theme, spec.theme, slot, props.lang || themeLang));
-  return aliases.get(name) || name;
+const sameSpec = (a, b) => !!a && !!b && a.theme === b.theme && normalizeFont(a.face) === normalizeFont(b.face);
+
+// Every character of a run shares one props object, so its slot rules and fonts are resolved once per run instead of once per character.
+function fontResolver(theme, themeLang, aliases) {
+  const runs = new WeakMap();
+  const describe = props => {
+    const { ascii, hAnsi, eastAsia } = props.fonts;
+    const lang = props.lang || themeLang;
+    // Complex-script runs, and a "Times New Roman" eastAsia face with equal ascii/hAnsi, bypass the Unicode table.
+    const fixed = props.cs || props.rtl ? 'cs' : normalizeFont(eastAsia?.face) === 'timesnewroman' && sameSpec(ascii, hAnsi) ? 'ascii' : '';
+    return { lang, fixed, hint: props.hint === 'eastAsia', zh: /^zh/i.test(lang), fonts: {} };
+  };
+  return (char, props) => {
+    let run = runs.get(props);
+    if (!run) runs.set(props, run = describe(props));
+    const slot = run.fixed || charSlot(char, run.hint, run.zh);
+    if (!(slot in run.fonts)) {
+      const spec = props.fonts[slot];
+      const name = spec ? normalizeFont(spec.face || themeFont(theme, spec.theme, run.lang)) : '';
+      run.fonts[slot] = aliases.get(name) || name;
+    }
+    return run.fonts[slot];
+  };
 }
 
 function childElementsVisible(node) {
@@ -150,12 +211,20 @@ export function escapeMarkdown(text) {
   return text.replace(/\\/g, '\\\\').replace(/([`*_{}\[\]<>&#!|~+\-=])/g, '\\$1').replace(/^([ \t]*\d+)([.)])(?=\s)/gm, '$1\\$2');
 }
 
+const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Bopomofo}\u3000-\u303f\uff00-\uffef]/u;
+// Collapses heading whitespace; a line break next to a CJK character is dropped, because Chinese text takes no space.
+export function headingText(text) {
+  return text.trim().replace(/\s*\n\s*/g, (gap, offset, whole) => {
+    const before = whole.slice(0, offset).match(/.$/u)?.[0] || '', after = whole.slice(offset + gap.length).match(/^./u)?.[0] || '';
+    return CJK.test(before) || CJK.test(after) ? '' : ' ';
+  }).replace(/\s+/g, ' ');
+}
+
 export function documentToMarkdown(doc) {
-  const lines = [`# ${escapeMarkdown(doc.title.replace(/\s+/g, ' ').trim())}`];
+  const lines = [`# ${escapeMarkdown(doc.title)}`];
   for (const [index, p] of doc.paragraphs.entries()) {
     if (index === doc.titleIndex) continue;
-    const text = escapeMarkdown(p.text);
-    lines.push(p.isHeading ? `## ${text.replace(/\s+/g, ' ')}` : text.replace(/\n/g, '  \n'));
+    lines.push(p.isHeading ? `## ${escapeMarkdown(headingText(p.text))}` : escapeMarkdown(p.text).replace(/\n/g, '  \n'));
   }
   return `${lines.join('\n\n')}\n`;
 }
@@ -168,36 +237,29 @@ export function mergeDocuments(docs) {
 export function parseDocx(input, filename = '未命名.docx') {
   if (/\.doc$/i.test(filename)) throw new Error('暂不支持旧版 .doc。请在 Word 或 WPS 中另存为 .docx 后导入。');
   if (!/\.docx$/i.test(filename)) throw new Error('请选择 .docx 格式的 Word 文档。');
-  const parts = readParts(input);
-  if (!parts['word/document.xml']) throw new Error('压缩包中没有 Word 正文，或使用了不支持的文档部件路径。');
-  const document = xml(parts['word/document.xml'], '正文');
+  const parts = readWordParts(input);
+  const document = xml(parts.document, '正文');
   const body = child(document.documentElement, 'body');
   if (!body) throw new Error('未找到 Word 正文。');
   const warnings = new Set();
   const warn = text => warnings.add(text);
-  const styles = makeStyles(xml(parts['word/styles.xml'], '样式'), warn);
-  const settings = xml(parts['word/settings.xml'], '设置');
+  const styles = makeStyles(xml(parts.styles, '样式'), warn);
+  const settings = xml(parts.settings, '设置');
   const themeLang = attr(descendants(settings, 'themeFontLang')[0], 'eastAsia') || 'zh-CN';
-  const rels = xml(parts['word/_rels/document.xml.rels'], '关系');
-  const themeRel = [...(rels?.documentElement.children || [])].find(el => /\/theme$/.test(el.getAttribute('Type') || '') && el.getAttribute('TargetMode') !== 'External');
-  let themePath = 'word/theme/theme1.xml';
-  if (themeRel) {
-    const target = themeRel.getAttribute('Target');
-    themePath = new URL(target, 'https://local.invalid/word/document.xml').pathname.slice(1);
-  }
-  const theme = xml(parts[themePath], '主题');
-  const fontTable = xml(parts['word/fontTable.xml'], '字体表');
+  const theme = xml(parts.theme, '主题');
+  const fontTable = xml(parts.fontTable, '字体表');
   const aliases = new Map();
   for (const font of descendants(fontTable, 'font')) {
     const name = normalizeFont(attr(font, 'name'));
     const alternate = normalizeFont(attr(child(font, 'altName'), 'val'));
     if (TITLE_FONTS.has(alternate) || HEI_FONTS.has(alternate)) aliases.set(name, alternate);
   }
+  const fontOf = fontResolver(theme, themeLang, aliases);
   const paragraphs = [];
   let unknownFonts = false, hiddenText = false, deletedText = false;
   const fieldStack = [];
 
-  function readParagraph(p) {
+  function readParagraph(p, inTable) {
     const pPr = child(p, 'pPr');
     const base = overlay(styles.defaults, styles.resolve(attr(child(pPr, 'pStyle'), 'val') || styles.defaultParagraph));
     const segments = [];
@@ -239,7 +301,7 @@ export function parseDocx(input, filename = '未命名.docx') {
     for (const segment of segments) for (const char of segment.text) {
       if (/[\s\u200b\u200c\u200d\ufeff]/u.test(char)) continue;
       visible++;
-      const font = fontFor(char, segment.props, theme, themeLang, aliases);
+      const font = fontOf(char, segment.props);
       if (!font) unknownFonts = true;
       fonts.add(font || '未知');
       hasTitleFont ||= TITLE_FONTS.has(font);
@@ -247,19 +309,20 @@ export function parseDocx(input, filename = '未命名.docx') {
     }
     const directNum = child(pPr, 'numPr');
     if (directNum ? attr(child(directNum, 'numId'), 'val') !== '0' : base.numbered) warn('自动列表编号未还原，仅保留段落文字；手动输入的编号会保留。');
-    paragraphs.push({ text, hasTitleFont, isHeading: visible > 0 && allHei, fonts: [...fonts] });
+    paragraphs.push({ text, hasTitleFont, isHeading: !inTable && visible > 0 && allHei, fonts: [...fonts] });
   }
-  function walk(node) {
+  // Table header cells are often set in 黑体, so paragraphs inside tables never become headings.
+  function walk(node, inTable = false) {
     if (isW(node, 'del') || isW(node, 'moveFrom')) { deletedText = true; return; }
-    if (isW(node, 'p')) { readParagraph(node); return; }
-    if (isW(node, 'tbl')) warn('表格已按行、单元格顺序展开为段落，不保留表格布局及表格样式字体。');
+    if (isW(node, 'p')) { readParagraph(node, inTable); return; }
+    if (isW(node, 'tbl')) { warn('表格已按行、单元格顺序展开为段落，不保留表格布局及表格样式字体；表格内的黑体段落不作为二级标题。'); inTable = true; }
     if (isW(node, 'altChunk')) { warn('文档含外部插入内容（altChunk），该部分未提取。'); return; }
-    for (const next of childElementsVisible(node)) walk(next);
+    for (const next of childElementsVisible(node)) walk(next, inTable);
   }
   walk(body);
   if (!paragraphs.length) throw new Error('文档中没有可提取的正文文字，可能是扫描件或仅包含图片。');
   const titleIndex = paragraphs.findIndex(p => p.hasTitleFont);
-  const title = titleIndex >= 0 ? paragraphs[titleIndex].text : filename.replace(/\.docx$/i, '');
+  const title = headingText(titleIndex >= 0 ? paragraphs[titleIndex].text : filename.replace(/\.docx$/i, ''));
   if (titleIndex < 0) warn('未找到方正小标宋_GBK 段落，已使用文件名作为一级标题。');
   if (unknownFonts) warn('部分文字未声明可解析的字体，已保留文字；未知字体不用于识别标题。');
   if (hiddenText || deletedText) warn('已忽略隐藏文字和删除的修订，保留插入的修订。');

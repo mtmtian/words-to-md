@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-10-03T23:07:48.413Z",
+  "checkedAt": "2026-10-04T00:48:49.325Z",
   "browser": "ego-lite Chromium",
   "environment": "file://, offline during checks",
   "inputs": [
@@ -9,7 +9,7 @@
     },
     {
       "name": "02_样式继承.docx",
-      "sha256": "83db3eeb4750ad21bd87eaea0daa479f868fc2a6f6f4bf9259eba91499705cb3"
+      "sha256": "a28c148924927baf7f0c513596df80267fa1d9bb4c0d0cc18e452a1f23855304"
     },
     {
       "name": "03_主题字体.docx",
@@ -20,7 +20,7 @@
       "sha256": "912533bb934c436116014371274408d6af98067025c15307e5aecff7c28a1e95"
     }
   ],
-  "htmlSha256": "59c699572f10cda8df8ebd155c08709bb762d2417da163af1026ba6ce61afee7",
+  "htmlSha256": "2650175a5690cf518a3c4473d084e9fe270fc1b3052de354e2295068a4fcc40c",
   "checks": [
     {
       "name": "file:// 断网加载且初始下载禁用",
@@ -143,6 +143,62 @@
       "result": "pass"
     },
     {
+      "name": "hint=eastAsia 时 ①、→、· 使用中文字体",
+      "result": "pass"
+    },
+    {
+      "name": "没有 hint 时 ① 使用西文字体",
+      "result": "pass"
+    },
+    {
+      "name": "㈠ 等中日韩带圈字符总用中文字体",
+      "result": "pass"
+    },
+    {
+      "name": "拼音声调字母仅在中文 run 中随中文字体",
+      "result": "pass"
+    },
+    {
+      "name": "eastAsia 为 Times New Roman 且西文字体相同时整段用 ascii",
+      "result": "pass"
+    },
+    {
+      "name": "eastAsia 为 Times New Roman 但西文字体不同时仍按表",
+      "result": "pass"
+    },
+    {
+      "name": "按关系文件定位 document2.xml 及其样式部件",
+      "result": "pass"
+    },
+    {
+      "name": "关系目标保持百分号编码匹配 ZIP 条目名",
+      "result": "pass"
+    },
+    {
+      "name": "标题与二级标题内换行在中文之间直接拼接",
+      "result": "pass"
+    },
+    {
+      "name": "西文标题换行合并为一个空格",
+      "result": "pass"
+    },
+    {
+      "name": "方正小标宋_GBK 英文名 FZXiaoBiaoSong-B05",
+      "result": "pass"
+    },
+    {
+      "name": "方正小标宋简体及其英文名不是标题字体",
+      "result": "pass"
+    },
+    {
+      "name": "表格内黑体单元格不作为二级标题",
+      "result": "pass"
+    },
+    {
+      "name": "主题字体长文档解析耗时有上限",
+      "result": "pass"
+    },
+    {
       "name": "文件大小 30 MB 上限",
       "result": "pass"
     },
@@ -191,6 +247,10 @@
       "result": "pass"
     },
     {
+      "name": "暂停 requestAnimationFrame（如后台标签页）时导入仍能完成",
+      "result": "pass"
+    },
+    {
       "name": "内置示例使用同一解析流程",
       "result": "pass"
     },
@@ -235,6 +295,6 @@
       "result": "pass"
     }
   ],
-  "passed": 53,
+  "passed": 68,
   "failure": null
 }
