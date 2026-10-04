@@ -107,7 +107,7 @@ function makeStyles(stylesDoc, warn) {
 }
 function onDefault(el) { return ['1', 'true', 'on'].includes(attr(el, 'default')); }
 
-function themeFont(themeDoc, key, slot, lang) {
+function themeFont(themeDoc, key, lang) {
   const group = key?.startsWith('major') ? 'majorFont' : 'minorFont';
   const font = themeDoc?.getElementsByTagNameNS('*', group)[0];
   if (!font) return '';
@@ -129,12 +129,20 @@ function charSlot(char, props) {
   return 'hAnsi';
 }
 
-function fontFor(char, props, theme, themeLang, aliases) {
-  const slot = charSlot(char, props);
-  const spec = props.fonts[slot];
-  if (!spec) return '';
-  const name = normalizeFont(spec.face || themeFont(theme, spec.theme, slot, props.lang || themeLang));
-  return aliases.get(name) || name;
+// Every character of a run shares one props object, so each slot is resolved once per run instead of once per character.
+function fontResolver(theme, themeLang, aliases) {
+  const runFonts = new WeakMap();
+  return (char, props) => {
+    let fonts = runFonts.get(props);
+    if (!fonts) runFonts.set(props, fonts = {});
+    const slot = charSlot(char, props);
+    if (!(slot in fonts)) {
+      const spec = props.fonts[slot];
+      const name = spec ? normalizeFont(spec.face || themeFont(theme, spec.theme, props.lang || themeLang)) : '';
+      fonts[slot] = aliases.get(name) || name;
+    }
+    return fonts[slot];
+  };
 }
 
 function childElementsVisible(node) {
@@ -193,6 +201,7 @@ export function parseDocx(input, filename = '未命名.docx') {
     const alternate = normalizeFont(attr(child(font, 'altName'), 'val'));
     if (TITLE_FONTS.has(alternate) || HEI_FONTS.has(alternate)) aliases.set(name, alternate);
   }
+  const fontOf = fontResolver(theme, themeLang, aliases);
   const paragraphs = [];
   let unknownFonts = false, hiddenText = false, deletedText = false;
   const fieldStack = [];
@@ -239,7 +248,7 @@ export function parseDocx(input, filename = '未命名.docx') {
     for (const segment of segments) for (const char of segment.text) {
       if (/[\s\u200b\u200c\u200d\ufeff]/u.test(char)) continue;
       visible++;
-      const font = fontFor(char, segment.props, theme, themeLang, aliases);
+      const font = fontOf(char, segment.props);
       if (!font) unknownFonts = true;
       fonts.add(font || '未知');
       hasTitleFont ||= TITLE_FONTS.has(font);

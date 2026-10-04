@@ -27,10 +27,13 @@ try {
   await snapshot();
   check('file:// 断网加载且初始下载禁用', await page.evaluate(() => !!window.WordMD && document.querySelector('#download-output').disabled));
   const results = await page.evaluate(cases => cases.map(test => {
+    const bytes = Uint8Array.from(atob(test.data), c => c.charCodeAt(0));
     try {
-      const doc = window.WordMD.parseDocx(Uint8Array.from(atob(test.data), c => c.charCodeAt(0)), test.filename || 'test.docx');
+      const started = performance.now();
+      const doc = window.WordMD.parseDocx(bytes, test.filename || 'test.docx');
+      const ms = Math.round(performance.now() - started);
       const md = window.WordMD.mergeDocuments([doc]);
-      return { name: test.name, title: doc.title, headings: doc.headings, text: doc.paragraphs.map(p => p.text), warnings: doc.warnings, md };
+      return { name: test.name, title: doc.title, headings: doc.headings, text: doc.paragraphs.map(p => p.text), warnings: doc.warnings, md, ms };
     } catch (error) { return { name: test.name, error: error.message }; }
   }), cases);
   for (let i = 0; i < cases.length; i++) {
@@ -43,6 +46,7 @@ try {
       if (test.text) assert.deepEqual(result.text, test.text, test.name);
       if (test.warning) assert.ok(result.warnings.some(w => w.includes(test.warning)), test.name);
       for (const literal of test.markdownIncludes || []) assert.ok(result.md.includes(literal), `${test.name}: ${literal}`);
+      if (test.maxMs) assert.ok(result.ms < test.maxMs, `${test.name}: ${result.ms} ms`);
     }
     checks.push({ name: test.name, result: 'pass' });
   }
