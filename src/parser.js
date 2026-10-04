@@ -3,7 +3,8 @@ import { unzipSync } from 'fflate';
 const W = new Set(['http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'http://purl.oclc.org/ooxml/wordprocessingml/main']);
 const MiB = 1024 * 1024;
 export const MAX_FILE_BYTES = 30 * MiB;
-const TITLE_FONTS = new Set(['方正小标宋gbk', 'fzxiaobiaosongb05s']);
+// 方正小标宋_GBK and its English name. FZXiaoBiaoSong-B05S is 方正小标宋简体, a separate GB2312 font.
+const TITLE_FONTS = new Set(['方正小标宋gbk', 'fzxiaobiaosongb05']);
 const HEI_FONTS = new Set(['黑体', 'simhei']);
 const normalizeFont = name => (name || '').normalize('NFKC').toLowerCase().replace(/[@\s_\-]/g, '');
 const isW = (node, name) => node?.nodeType === 1 && W.has(node.namespaceURI) && (!name || node.localName === name);
@@ -196,12 +197,20 @@ export function escapeMarkdown(text) {
   return text.replace(/\\/g, '\\\\').replace(/([`*_{}\[\]<>&#!|~+\-=])/g, '\\$1').replace(/^([ \t]*\d+)([.)])(?=\s)/gm, '$1\\$2');
 }
 
+const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Bopomofo}\u3000-\u303f\uff00-\uffef]/u;
+// Collapses heading whitespace; a line break next to a CJK character is dropped, because Chinese text takes no space.
+export function headingText(text) {
+  return text.trim().replace(/\s*\n\s*/g, (gap, offset, whole) => {
+    const before = whole.slice(0, offset).match(/.$/u)?.[0] || '', after = whole.slice(offset + gap.length).match(/^./u)?.[0] || '';
+    return CJK.test(before) || CJK.test(after) ? '' : ' ';
+  }).replace(/\s+/g, ' ');
+}
+
 export function documentToMarkdown(doc) {
-  const lines = [`# ${escapeMarkdown(doc.title.replace(/\s+/g, ' ').trim())}`];
+  const lines = [`# ${escapeMarkdown(headingText(doc.title))}`];
   for (const [index, p] of doc.paragraphs.entries()) {
     if (index === doc.titleIndex) continue;
-    const text = escapeMarkdown(p.text);
-    lines.push(p.isHeading ? `## ${text.replace(/\s+/g, ' ')}` : text.replace(/\n/g, '  \n'));
+    lines.push(p.isHeading ? `## ${escapeMarkdown(headingText(p.text))}` : escapeMarkdown(p.text).replace(/\n/g, '  \n'));
   }
   return `${lines.join('\n\n')}\n`;
 }
@@ -310,7 +319,7 @@ export function parseDocx(input, filename = '未命名.docx') {
   walk(body);
   if (!paragraphs.length) throw new Error('文档中没有可提取的正文文字，可能是扫描件或仅包含图片。');
   const titleIndex = paragraphs.findIndex(p => p.hasTitleFont);
-  const title = titleIndex >= 0 ? paragraphs[titleIndex].text : filename.replace(/\.docx$/i, '');
+  const title = titleIndex >= 0 ? headingText(paragraphs[titleIndex].text) : filename.replace(/\.docx$/i, '');
   if (titleIndex < 0) warn('未找到方正小标宋_GBK 段落，已使用文件名作为一级标题。');
   if (unknownFonts) warn('部分文字未声明可解析的字体，已保留文字；未知字体不用于识别标题。');
   if (hiddenText || deletedText) warn('已忽略隐藏文字和删除的修订，保留插入的修订。');

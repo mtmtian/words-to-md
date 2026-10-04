@@ -125,7 +125,7 @@ save(doc, '01_直接字体.docx')
 doc = make_doc()
 base = doc.styles.add_style('SmallSongBase', WD_STYLE_TYPE.PARAGRAPH)
 base.base_style = doc.styles['Normal']
-font(base, 'FZXiaoBiaoSong-B05S')
+font(base, 'FZXiaoBiaoSong-B05')
 doc.styles['Title'].base_style = base
 clear_fonts(doc.styles['Title'])
 para(doc, '公共服务资料归档工作指引', style='Title')
@@ -210,5 +210,7 @@ embedded = [{'name': path.name, 'data': base64.b64encode(path.read_bytes()).deco
 (ROOT / 'src' / 'demos.json').write_text(json.dumps(embedded, ensure_ascii=False), encoding='utf-8')
 with ZipFile(OUT / 'Word转Markdown_示例文档.zip', 'w', ZIP_DEFLATED) as archive:
     for path in sorted(OUT.glob('*.docx')):
-        archive.write(path, path.name)
+        info = ZipInfo(path.name, date_time=(2026, 10, 4, 0, 0, 0))
+        info.compress_type = ZIP_DEFLATED
+        archive.writestr(info, path.read_bytes())
 print('Generated', len(embedded), 'DOCX files and embedded browser demos.')

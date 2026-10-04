@@ -72,6 +72,13 @@ export async function parserCases(root) {
     'word/styles2.xml': strToU8(`<w:styles xmlns:w="${W}"><w:style w:type="paragraph" w:styleId="Hei"><w:rPr>${f('黑体')}</w:rPr></w:style></w:styles>`)
   });
   cases.push({ name: '按关系文件定位 document2.xml 及其样式部件', data: Buffer.from(zipSync(webParts)).toString('base64'), title: '网页版标题', headings: 1 });
+  const br = face => `<w:r><w:rPr>${f(face)}</w:rPr><w:br/></w:r>`;
+  cases.push(
+    { name: '标题与二级标题内换行在中文之间直接拼接', data: pack(p(r('关于推进文档数字化', f('方正小标宋_GBK')) + br('方正小标宋_GBK') + r('整理工作的通知', f('方正小标宋_GBK'))) + p(r('一、工作', f('黑体')) + br('黑体') + r('目标', f('黑体')))), title: '关于推进文档数字化整理工作的通知', headings: 1, markdownIncludes: ['# 关于推进文档数字化整理工作的通知\n', '## 一、工作目标\n'] },
+    { name: '西文标题换行合并为一个空格', data: pack(p(r('Annual', f('方正小标宋_GBK')) + br('方正小标宋_GBK') + r('Report', f('方正小标宋_GBK')))), title: 'Annual Report' },
+    { name: '方正小标宋_GBK 英文名 FZXiaoBiaoSong-B05', data: pack(body('英文名标题', 'FZXiaoBiaoSong-B05')), title: '英文名标题' },
+    { name: '方正小标宋简体及其英文名不是标题字体', data: pack(body('简体中文名', '方正小标宋简体') + body('简体英文名', 'FZXiaoBiaoSong-B05S')), title: 'test', warning: '未找到方正小标宋' }
+  );
   cases.push({ name: '表格内黑体单元格不作为二级标题', data: titled(body('一、工作安排', '黑体') + `<w:tbl>${row(['序号', '任务'], '黑体')}${row(['1', '收集'])}</w:tbl>`), headings: 1, text: ['标题', '一、工作安排', '序号', '任务', '1', '收集'] });
   // Word's default Normal style resolves through theme fonts; 20,000 such paragraphs took 3-4 s before per-run caching.
   const themeDefaults = `<w:styles xmlns:w="${W}"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:eastAsiaTheme="minorEastAsia" w:hAnsiTheme="minorHAnsi" w:cstheme="minorBidi"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>`;

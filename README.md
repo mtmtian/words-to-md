@@ -16,8 +16,8 @@
 
 ## 标题规则
 
-- 每份 Word 文档恰好一个一级标题：取正文中第一个含“方正小标宋_GBK”可见文字的完整段落，移到该文档开头，不重复输出。该段落之前的正文仍按原顺序保留。
-- 支持字体名称大小写、空格、下划线差异及英文名 `FZXiaoBiaoSong-B05S`。字体判断读取文件中的元数据，无需本机安装该字体。
+- 每份 Word 文档恰好一个一级标题：取正文中第一个含“方正小标宋_GBK”可见文字的完整段落，移到该文档开头，不重复输出。该段落之前的正文仍按原顺序保留。标题和二级标题内的换行，与中文相邻时直接拼接，其余合并为一个空格。
+- 支持字体名称大小写、空格、下划线差异及英文名 `FZXiaoBiaoSong-B05`。方正小标宋简体（英文名 `FZXiaoBiaoSong-B05S`）是另一款 GB2312 字体，不作为标题字体。字体判断读取文件中的元数据，无需本机安装该字体。
 - 其他段落的所有非空白文字，包括数字和标点，都使用“黑体 / SimHei”时，输出二级标题。宋体加粗、黑体宋体混排、中文黑体但数字为 Calibri 的段落均保留为正文。表格单元格内的段落不作为二级标题，因为表头常用黑体。
 - 解析直接字体、文档默认字体、段落样式及 basedOn 继承、字符样式及继承、常见中西文主题字体、字体表 alternate name。支持 Transitional 和 Strict WordprocessingML 命名空间。
 - 找不到目标字体时使用文件名作为一级标题，并提示用户。无法确定的字体不会猜测成目标字体。
@@ -51,7 +51,7 @@ npm run serve
 ```js
 const bytes = new Uint8Array(await selectedFile.arrayBuffer());
 const parsed = WordMD.parseDocx(bytes, selectedFile.name);
-// parsed: { filename, title, titleIndex, titleSource, paragraphs, headings, warnings }
+// parsed: { filename, title, titleIndex, titleSource, paragraphs, headings, warnings }，title 已合并换行
 // paragraphs: [{ text, hasTitleFont, isHeading, fonts }]
 // 失败时抛出带中文说明的 Error；没有匹配标题时返回 filename 兜底及 warnings。
 const markdown = WordMD.mergeDocuments([parsed]);

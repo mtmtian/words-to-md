@@ -1,5 +1,5 @@
 import { zipSync, strToU8 } from 'fflate';
-import { MAX_FILE_BYTES, parseDocx, mergeDocuments } from './parser.js';
+import { MAX_FILE_BYTES, parseDocx, mergeDocuments, headingText } from './parser.js';
 import demoDocuments from './demos.json';
 
 const $ = id => document.getElementById(id);
@@ -92,10 +92,10 @@ function renderPreview() {
   preview.replaceChildren();
   state.docs.forEach((doc, index) => {
     if (index) preview.append(element('hr'));
-    preview.append(element('h1', '', doc.title.replace(/\s+/g, ' ').trim()));
+    preview.append(element('h1', '', headingText(doc.title)));
     doc.paragraphs.forEach((p, pIndex) => {
       if (pIndex === doc.titleIndex) return;
-      preview.append(element(p.isHeading ? 'h2' : 'p', '', p.isHeading ? p.text.replace(/\s+/g, ' ') : p.text));
+      preview.append(element(p.isHeading ? 'h2' : 'p', '', p.isHeading ? headingText(p.text) : p.text));
     });
   });
 }
